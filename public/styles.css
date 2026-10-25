@@ -2557,7 +2557,7 @@ h1 {
   mask-image: none;
   -webkit-mask-image: none;
   opacity: 1;
-  filter: grayscale(1) contrast(1.06) drop-shadow(0 0 18px #0003);
+  filter: grayscale(1) contrast(1.12) brightness(.88) drop-shadow(0 0 12px #0004);
 }
 .official-winner {
   margin: 8px 20px;
@@ -2894,6 +2894,7 @@ h1 {
 .hero-candidates .portrait-photo {
   object-fit: contain;
   object-position: center bottom;
+  backface-visibility: hidden;
 }
 #brazilMap {
   max-height: 390px;
@@ -2921,6 +2922,12 @@ h1 {
   border-radius: 12px;
   background: radial-gradient(ellipse at 50% 50%, #18345a78, #07101bd1 75%);
 }
+#worldMapStatus {
+  margin: 9px 0 0;
+  min-height: 1.5em;
+  color: #aebed5;
+  line-height: 1.5;
+}
 #worldMap {
   display: block;
   width: 100%;
@@ -2936,9 +2943,10 @@ h1 {
   transition: fill .45s, filter .2s, stroke .2s;
 }
 .world-country.has-results-source {
-  fill: #40536c;
+  fill: #315b86;
   cursor: pointer;
-  stroke: #c9dbf5a0;
+  stroke: #91c7ffb0;
+  filter: drop-shadow(0 0 2px #3195ff35);
 }
 .world-country.is-data {
   fill: color-mix(in srgb, var(--map-result) 78%, #172438);
@@ -2951,6 +2959,10 @@ h1 {
   stroke-width: 1.8;
   filter: brightness(1.35);
   outline: none;
+}
+.dot.map-available {
+  background: #3975ac;
+  border: 1px solid #91c7ff;
 }
 .candidate-rank-row {
   width: 100%;

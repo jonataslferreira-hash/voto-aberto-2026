@@ -438,10 +438,12 @@ test("lista abre o perfil detalhado do candidato", async ({ page }) => {
 });
 test("mapa mundial seleciona somente local publicado pela API", async ({ page }) => {
   await api(page, {
-    locations: [{ id: "au", nome: "Austrália", tipo: "country", countryCode: "AU" }],
+    locations: [{ id: "au", nome: "Austrália", tipo: "country", countryCode: "au" }],
   });
   await page.goto("./");
   await expect(page.locator("#worldMap path[data-country-code='AU']")).toHaveAttribute("role", "button");
+  await expect(page.locator("#worldMap path[data-country-code='AU']")).toHaveClass(/is-data/);
+  await expect(page.locator("#worldMapCount")).toContainText("1 disponíveis");
   await page.locator("#worldMap path[data-country-code='AU']").click();
   await expect(page.locator("#scopeLabel")).toHaveText("Austrália");
 });
@@ -472,6 +474,11 @@ test("2022 apresenta os dois turnos, candidatos corretos e origem histórica exp
   await expect(page.locator(".candidate--red .candidate__votes")).toContainText(
     "60.345.999",
   );
+  await expect(page.locator("#historyTitle")).toHaveText("Comparação entre os turnos");
+  await expect(page.locator("#windowSelect")).toBeDisabled();
+  await expect(page.locator("#historyChart .chart-point")).toHaveCount(4);
+  await expect(page.locator("#historyNote")).toContainText("Percentuais finais reais do 1º e do 2º turno");
+  await expect(page.locator("#historyChart")).not.toContainText("Histórico temporal não arquivado");
   await expect(page.locator("#notice")).toContainText(
     "Arquivo histórico independente",
   );

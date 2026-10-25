@@ -338,15 +338,15 @@
             <span class="small-tag" id="worldMapCount">Países com dados: 0</span>
           </div>
           <div class="world-map-wrap"><svg id="worldMap" viewBox="0 0 960 460" role="group" aria-label="Mapa mundial; países sem resultados publicados aparecem sem cor"></svg></div>
-          <div class="map-legend"><span><i class="dot blue"></i><span id="worldBlueLegend">Candidato à frente</span></span><span><i class="dot red"></i><span id="worldRedLegend">Outro candidato</span></span><span><i class="dot unknown"></i>Sem dados</span></div>
-          <p class="footnote">Só países retornados pela fonte podem ser selecionados. A forma do mapa vem do conjunto Natural Earth 1:110m, em domínio público; cores e dados dependem da API de resultados.</p>
+          <div class="map-legend"><span><i class="dot blue"></i><span id="worldBlueLegend">Candidato à frente</span></span><span><i class="dot red"></i><span id="worldRedLegend">Outro candidato</span></span><span><i class="dot map-available"></i>Local publicado, sem votos válidos</span><span><i class="dot unknown"></i>Sem local publicado</span></div>
+          <p class="footnote" id="worldMapStatus" role="status">Carregando os locais e os resultados publicados pelo provedor.</p>
         </section>
         <section class="lower-grid">
           <article class="panel history-card" id="cardHistorico">
             <div class="card-heading">
               <div>
-                <p class="eyebrow">EVOLUÇÃO DA DISPUTA</p>
-                <h2>Histórico de votos</h2>
+                <p class="eyebrow" id="historyEyebrow">EVOLUÇÃO DA DISPUTA</p>
+                <h2 id="historyTitle">Histórico de votos</h2>
               </div>
               <label
                 ><span class="sr-only">Janela do histórico</span

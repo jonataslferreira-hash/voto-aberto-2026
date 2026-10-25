@@ -282,6 +282,15 @@ test("exterior compacto usa somente cidades publicadas do país e mantém metada
     /Cobertura incompleta/,
   );
 });
+test("lista de países normaliza código ISO publicado em minúsculas", async () => {
+  const { getLocations } = await import("../src/providers/index.mjs");
+  const result = await getLocations(async () =>
+    jsonResponse({
+      locais: [{ id: "au", nome: "Austrália", tipo: "country", countryCode: "au" }],
+    }),
+  );
+  assert.equal(result.locations[0].countryCode, "AU");
+});
 test("CNN normaliza somente o ZZ explicitamente publicado e mantém metadados ausentes", async () => {
   const raw = await fixture("cnn-abroad");
   const result = parseCnnAbroad(raw, "https://cnn.example/zz.json");
