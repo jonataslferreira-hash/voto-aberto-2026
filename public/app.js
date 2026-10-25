@@ -16,10 +16,23 @@ import {
   linePath,
   int,
   pct,
+  candidateColor,
 } from "./dashboard-data.js";
 const PORTRAITS = {
   blue: new URL("./images/flavio-cutout.png", import.meta.url).href,
   red: new URL("./images/lula-cutout.png", import.meta.url).href,
+};
+const CANDIDATE_PORTRAITS = {
+  "55": new URL("./images/candidates/2026-55-ronaldo-caiado.jpg", import.meta.url).href,
+  "27": new URL("./images/candidates/2026-27-clariana-barao.jpg", import.meta.url).href,
+  "21": new URL("./images/candidates/2026-21-edmilson-costa.jpg", import.meta.url).href,
+  "16": new URL("./images/candidates/2026-16-hertz-dias.jpg", import.meta.url).href,
+  "70": new URL("./images/candidates/2026-70-augusto-cury.jpg", import.meta.url).href,
+  "30": new URL("./images/candidates/2026-30-zema.jpg", import.meta.url).href,
+  "80": new URL("./images/candidates/2026-80-samara-martins.jpg", import.meta.url).href,
+  "35": new URL("./images/candidates/2026-35-wilson-grassi.jpg", import.meta.url).href,
+  "14": new URL("./images/candidates/2026-14-renan-santos.jpg", import.meta.url).href,
+  "29": new URL("./images/candidates/2026-29-rui-costa-pimenta.jpg", import.meta.url).href,
 };
 const DEFAULT_API_BASE_URL =
   (import.meta.env.VITE_API_BASE_URL || "").trim().replace(/\/+$/, "") || null;
@@ -269,20 +282,18 @@ async function getJSON(path, query = {}, signal) {
 }
 function voteBar(payload, compact = false) {
   const c = comparison(payload);
-  return `<div class="vote-track ${c.valid ? "" : "unavailable"}" role="img" aria-label="${c.valid ? `${e(c.flavio.name)} ${pct(c.flavio.pct)}; ${e(c.lula.name)} ${pct(c.lula.pct)}` : "Percentuais indisponíveis"}"><i class="blue" style="width:${c.valid ? c.flavio.pct : 0}%"></i><i class="red" style="width:${c.valid ? c.lula.pct : 0}%"></i></div>${compact ? "" : `<div class="bar-legend"><span>${e(c.flavio.name)} · ${e(pct(c.flavio.pct))}</span><span>${e(pct(c.lula.pct))} · ${e(c.lula.name)}</span></div>`}`;
+  return `<div class="vote-track ${c.valid ? "" : "unavailable"}" role="img" aria-label="${c.valid ? `${e(c.flavio.name)} ${pct(c.flavio.pct)}; ${e(c.lula.name)} ${pct(c.lula.pct)}` : "Percentuais indisponíveis"}"><i class="blue" style="--candidate-color:${c.flavio.color};width:${c.valid ? c.flavio.pct : 0}%"></i><i class="red" style="--candidate-color:${c.lula.color};width:${c.valid ? c.lula.pct : 0}%"></i></div>${compact ? "" : `<div class="bar-legend"><span>${e(c.flavio.name)} · ${e(pct(c.flavio.pct))}</span><span>${e(pct(c.lula.pct))} · ${e(c.lula.name)}</span></div>`}`;
 }
 function portraitFor(number, name) {
-  return state.year === 2026 &&
-    String(number) === "22" &&
-    /fl[aá]vio/i.test(name)
-    ? PORTRAITS.blue
-    : state.year === 2026 && String(number) === "13" && /lula/i.test(name)
-      ? PORTRAITS.red
-      : null;
+  if (state.year !== 2026) return null;
+  if (String(number) === "22" && /fl[aá]vio/i.test(name)) return PORTRAITS.blue;
+  if (String(number) === "13" && /lula/i.test(name)) return PORTRAITS.red;
+  return CANDIDATE_PORTRAITS[String(number)] || null;
 }
 function renderCandidate(name, party, number, c, color) {
   const image = portraitFor(number, name);
-  return `<article class="candidate candidate--${color}"><div class="candidate-info"><p class="candidate-kicker"><b>${e(number)}</b> ${e(party)} <span>•</span> PRESIDENTE</p><h2>${e(name)}</h2><p class="candidate__pct" aria-label="${e(pct(c.pct))}">${c.pct === null ? "—" : e(pct(c.pct).slice(0, -1))}${c.pct === null ? "" : "<small>%</small>"}</p><p class="candidate__votes">${e(int(c.votes))} <span>votos</span></p><div class="candidate-progress" aria-hidden="true"><i style="width:${c.pct ?? 0}%"></i></div></div><div class="portrait-frame ${image ? "" : "is-unavailable"}"><img class="portrait-photo" ${image ? `src="${image}"` : ""} alt="Retrato fotográfico recortado de ${e(name)}" width="${String(number) === "22" ? 411 : 540}" height="${String(number) === "22" ? 546 : 780}" decoding="async"><span class="portrait-fallback">Retrato indisponível</span></div></article>`;
+  const accent = candidateColor(number);
+  return `<article class="candidate candidate--${color}" data-watermark="${e(name)}" style="--candidate-accent:${accent}"><div class="candidate-info"><p class="candidate-kicker"><b>${e(number)}</b> ${e(party)} <span>•</span> PRESIDENTE</p><h2>${e(name)}</h2><p class="candidate__pct" aria-label="${e(pct(c.pct))}">${c.pct === null ? "—" : e(pct(c.pct).slice(0, -1))}${c.pct === null ? "" : "<small>%</small>"}</p><p class="candidate__votes">${e(int(c.votes))} <span>votos</span></p><div class="candidate-progress" aria-hidden="true"><i style="width:${c.pct ?? 0}%"></i></div></div><div class="portrait-frame ${image ? "" : "is-unavailable"}"><img class="portrait-photo" ${image ? `src="${image}"` : ""} alt="${image ? `Retrato fotográfico de ${e(name)}` : ""}" width="${String(number) === "22" ? 411 : 540}" height="${String(number) === "22" ? 546 : 780}" decoding="async"><span class="portrait-fallback">Retrato indisponível</span></div></article>`;
 }
 
 function renderResult(result) {
@@ -297,15 +308,19 @@ function renderResult(result) {
     valid = result.sourceKind !== "unavailable";
   $("app").dataset.gradient = c.valid ? "live" : "neutral";
   $("app").style.setProperty("--split", `${c.split ?? 50}%`);
+  $("app").style.setProperty("--left-color", candidateColor(state.pair[0]));
+  $("app").style.setProperty("--right-color", candidateColor(state.pair[1]));
   $("heroColorField").dataset.valid = String(c.valid);
   $("heroColorBlue").style.width = `${c.split ?? 0}%`;
   $("heroColorRed").style.width = `${c.split === null ? 0 : 100 - c.split}%`;
   $("heroColorField").setAttribute(
     "aria-label",
     c.valid
-      ? `Área azul ${c.split.toFixed(2)}%, área vermelha ${(100 - c.split).toFixed(2)}%; proporção entre os candidatos selecionados.`
+      ? `${c.flavio.name} ${c.split.toFixed(2)}%, ${c.lula.name} ${(100 - c.split).toFixed(2)}%; proporção entre os candidatos selecionados.`
       : "Áreas de cor neutras: percentuais ausentes.",
   );
+  $("heroColorBlue").style.background = `linear-gradient(100deg, color-mix(in srgb, ${candidateColor(state.pair[0])} 85%, transparent), color-mix(in srgb, ${candidateColor(state.pair[0])} 48%, transparent))`;
+  $("heroColorRed").style.background = `linear-gradient(100deg, color-mix(in srgb, ${candidateColor(state.pair[1])} 48%, transparent), color-mix(in srgb, ${candidateColor(state.pair[1])} 85%, transparent))`;
   const winner = confirmedWinner(result);
   $("winnerConfirmation").hidden = !winner;
   $("winnerConfirmation").textContent = winner
@@ -326,9 +341,9 @@ function renderResult(result) {
   $("heroBar").innerHTML = voteBar(result);
   const legends = document.querySelectorAll(".map-legend>span");
   if (legends[0])
-    legends[0].innerHTML = `<i class="dot blue"></i>${e(c.flavio.name)} na frente`;
+    legends[0].innerHTML = `<i class="dot blue" style="background:${candidateColor(c.flavio.number)}"></i>${e(c.flavio.name)} na frente`;
   if (legends[1])
-    legends[1].innerHTML = `<i class="dot red"></i>${e(c.lula.name)} na frente`;
+    legends[1].innerHTML = `<i class="dot red" style="background:${candidateColor(c.lula.number)}"></i>${e(c.lula.name)} na frente`;
 
   $("heroDifference").innerHTML =
     c.diff === null
@@ -469,8 +484,8 @@ function renderMap() {
         : c.leader === "tie"
           ? "#8f805f"
           : c.leader === "blue"
-            ? `color-mix(in srgb, #3b83ee ${30 + intensity * 70}%, #1d2b41)`
-            : `color-mix(in srgb, #f45b76 ${30 + intensity * 70}%, #2a2436)`;
+            ? `color-mix(in srgb, ${candidateColor(c.flavio.number)} ${30 + intensity * 70}%, #1d2b41)`
+            : `color-mix(in srgb, ${candidateColor(c.lula.number)} ${30 + intensity * 70}%, #2a2436)`;
     const label = `${s.name} · ${c.leader === "unknown" ? "Sem dados" : c.leader === "tie" ? "Empate em votos" : `${e(c.leader === "blue" ? c.flavio.name : c.lula.name)} na frente · ${providerName(p.provider)}`}`;
     node.setAttribute("aria-label", `Selecionar ${label}`);
     node.querySelector("title").textContent = label;
@@ -558,6 +573,12 @@ function renderExterior() {
           if (general && (!p || p.sourceKind === "unavailable"))
             return `<div class="empty-state"><span class="empty-symbol" aria-hidden="true">◎</span><h3>Exterior sem totalização disponível</h3><p>${e(p?.consolidationWarning || "Aguardando uma resposta válida da fonte. Países e cidades aparecem somente quando retornados pela API.")}</p></div>`;
           const c = comparison(p);
+          if (
+            general && state.year === 2026 && state.turn === 2 &&
+            p?.provider === "tse" && p.status === "not-started" &&
+            c.flavio.votes === 0 && c.lula.votes === 0
+          )
+            return `<div class="empty-state exterior-awaiting"><span class="empty-symbol" aria-hidden="true">◷</span><h3>Exterior · aguardando a apuração do 2º turno</h3><p>O TSE ainda não publicou votos para o exterior nesta eleição. A resposta oficial indica <strong>${e(int(p.secoesApuradas))} de ${e(int(p.secoesTotais))} seções</strong> apuradas; os percentuais permanecem indisponíveis até haver votos publicados.</p><p class="exterior-meta">TSE oficial · fonte atualizada em ${e(date(p.updatedAt))} · ${safeLink(p.sourceUrl, "consultar resposta do TSE")}</p></div>`;
           return `<button type="button" class="exterior-row" data-exterior-scope="${e(l.scope)}" aria-label="Selecionar ${e(l.nome)}"><span class="exterior-name"><span class="country-code">${e(l.countryCode || "LOC")}</span>${e(l.nome)} <span aria-hidden="true">↗</span></span><span class="exterior-values"><span>${e(c.flavio.name)} ${e(pct(c.flavio.pct))} · ${e(int(c.flavio.votes))}</span><span>${e(c.lula.name)} ${e(pct(c.lula.pct))} · ${e(int(c.lula.votes))}</span></span>${voteBar(p, true)}<span class="exterior-meta">Δ ${e(int(c.diff))} votos · ${e(pct(progress(p)))} apurado · ${e(int(p?.secoesApuradas))}/${e(int(p?.secoesTotais))} seções</span><span class="exterior-meta">${e(sourceKind(p))} · ${e(providerName(p?.provider))} · ${e(date(p?.updatedAt))}</span>${p?.consolidationWarning ? `<span class="exterior-meta">${e(p.consolidationWarning)}</span>` : ""}</button>`;
         })
         .join("")
@@ -857,7 +878,14 @@ async function refreshDetails() {
 }
 function syncCandidateOptions(result) {
   const list = Array.isArray(result.candidatos) ? result.candidatos : [];
-  const numbered = list.filter((c) => c.numero);
+  const sortByVotes = (items) => items.map((item, index) => ({ item, index }))
+    .sort((a, b) => {
+      const av = Number.isSafeInteger(a.item.votos) && a.item.votos >= 0 ? a.item.votos : null;
+      const bv = Number.isSafeInteger(b.item.votos) && b.item.votos >= 0 ? b.item.votos : null;
+      return av === null ? (bv === null ? a.index - b.index : 1) : bv === null ? -1 : bv - av || a.index - b.index;
+    }).map(({ item }) => item);
+  const ranked = sortByVotes(list);
+  const numbered = ranked.filter((c) => c.numero);
   if (!numbered.length) {
     for (const [id, index] of [
       ["leftCandidateSelect", 0],
@@ -889,10 +917,12 @@ function syncCandidateOptions(result) {
     ? "<h2>Todos os candidatos · " +
       e(electionFor(state.year, state.turn).label) +
       '</h2><div class="candidate-table">' +
-      list
+      ranked
         .map(
-          (c) =>
-            `<div><strong>${e(c.candidato)}</strong><span>${e(c.partido || "")} ${e(c.numero || "")}</span><b>${e(pct(c.percentual))}</b><span>${e(int(c.votos))} votos</span></div>`,
+          (c, index) => {
+            const portrait = state.year === 2026 ? portraitFor(c.numero, c.candidato) : null;
+            return `<div class="candidate-rank-row"><b class="candidate-rank">${index + 1}º</b>${portrait ? `<img src="${portrait}" alt="Retrato de ${e(c.candidato)}" loading="lazy" width="32" height="42">` : `<span class="candidate-rank-placeholder" aria-label="Retrato indisponível">—</span>`}<strong>${e(c.candidato)}</strong><span>${e(c.partido || "")} ${e(c.numero || "")}</span><b style="color:${candidateColor(c.numero)}">${e(pct(c.percentual))}</b><span>${e(int(c.votos))} votos</span></div>`;
+          },
         )
         .join("") +
       "</div>"

@@ -1,4 +1,5 @@
 import { soundNotes } from "./election-events.js";
+import { candidateColor } from "./dashboard-data.js";
 export function createEventDisplay({ overlay, soundButton, soundStatus, app }) {
   let audio = null,
     enabled = false,
@@ -35,7 +36,7 @@ export function createEventDisplay({ overlay, soundButton, soundStatus, app }) {
   function play(event) {
     if (!enabled || !audio || audio.state !== "running") return;
     const time = audio.currentTime;
-    for (const note of soundNotes(event.number, event.kind)) {
+    for (const note of soundNotes(event.number, event.kind, event.year, event.name)) {
       const oscillator = audio.createOscillator(),
         gain = audio.createGain();
       oscillator.type = "sine";
@@ -71,6 +72,7 @@ export function createEventDisplay({ overlay, soundButton, soundStatus, app }) {
     returnFocus = document.activeElement;
     overlay.dataset.kind = event.kind;
     overlay.dataset.color = event.color;
+    overlay.style.setProperty("--event", candidateColor(event.number));
     overlay.setAttribute(
       "role",
       event.kind === "victory" ? "dialog" : "status",

@@ -1,6 +1,6 @@
 # Voto Aberto 2026
 
-Central independente de apuração presidencial: tema escuro, candidatos nas laterais, urnas apuradas no centro, mapa geográfico, regiões, exterior e histórico. Flávio permanece à esquerda (azul), Lula à direita (vermelho). O modo completo é o padrão; o modo simples preserva disputa, localidade, votos, diferença, urnas, status e fonte, sem recarregar a página.
+Central independente de apuração presidencial: tema escuro, candidatos nas laterais, urnas apuradas no centro, mapa geográfico, regiões, exterior e histórico. A ordem visual permanece esquerda/direita, mas a cor acompanha cada candidato: Lula é vermelho e Flávio é azul em qualquer lado. O modo completo é o padrão; o modo simples preserva disputa, localidade, votos, diferença, urnas, status e fonte, sem recarregar a página.
 
 **Agora o site funciona no GitHub Pages mesmo sem backend configurado.** Sem `VITE_API_BASE_URL`, tenta consultar diretamente o TSE para a localidade selecionada de 2026. O modo ao vivo respeita intervalo mínimo de 60 segundos e o cache da fonte. Se o acesso/CORS falhar ou o usuário desligar esse modo, usa `data/results.json` com coleta real identificada e aviso explícito de que não é uma conexão ao vivo.
 
@@ -44,7 +44,7 @@ Sem a variável, o modo automático consulta o TSE quando disponível e mantém 
 
 ## Ano, turno, candidatos e conexão
 
-Os seletores acima da disputa permitem **2026 e 2022, primeiro e segundo turnos**, além dos dois candidatos usados na comparação. O primeiro turno apresenta também a lista de todos os candidatos devolvidos pela fonte: 12 no arquivo de 2026 e 11 no arquivo de 2022 coletados. O segundo turno de 2022 mostra Jair Bolsonaro e Lula, sem reutilizar o nome/retrato de Flávio. Trocar ano/turno cancela consultas, limpa mapa/regiões e impede que um backend antigo exiba dados de 2026 como se fossem de 2022. Retratos sem origem adequada ao candidato/ano são substituídos por indisponibilidade.
+Os seletores acima da disputa permitem **2026 e 2022, primeiro e segundo turnos**, além dos dois candidatos usados na comparação. A lista do primeiro turno ordena todos os candidatos retornados pela fonte por votos, do maior para o menor, e mostra a posição e o retrato quando há imagem com licença verificável. O arquivo publicado contém 12 registros de candidatos para 2026 e 11 para 2022. O segundo turno de 2022 mostra Jair Bolsonaro e Lula, sem reutilizar o nome/retrato de Flávio. No segundo turno de 2026, o exterior informa os números reais publicados pelo TSE; enquanto constar 0/1.351 seções, a interface declara que aguarda o início e não estima votos ou percentuais. Trocar ano/turno cancela consultas, limpa mapa/regiões e impede que um backend antigo exiba dados de 2026 como se fossem de 2022.
 
 Em **Configurações → URL do backend (opcional)**, salve uma URL HTTPS pública. A preferência é local ao navegador; não altera configuração de outras pessoas nem recebe segredos. “Usar dados publicados do site” retorna ao modo sem servidor. `VITE_API_BASE_URL` continua funcionando como configuração inicial de build. Um backend deve ser atualizado junto com o frontend para entender os parâmetros `year` e `turn`.
 
@@ -113,10 +113,13 @@ O gráfico usa SVG local, cores por candidato, legenda, janela temporal e toolti
 
 ## Retratos e licenças
 
-As buscas de imagem foram feitas no Google e os direitos foram verificados nos metadados da página de origem do Wikimedia Commons. Arquivos são servidos pelo próprio build; a busca não é uma dependência do site.
+Os direitos foram verificados nos metadados das páginas dos arquivos no Wikimedia Commons. Arquivos são servidos localmente pelo próprio build; não há busca nem dependência de imagens do Google em execução.
 
 - **Flávio Bolsonaro, 2026**: crédito Tribunal Superior Eleitoral do Brasil (TSE), [arquivo de origem](<https://commons.wikimedia.org/wiki/File:2026_FLAVIO_BOLSONARO_CANDIDATO_PRESIDENTE_TSE_(280002551544)_(cropped).jpg>), [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). JPEG de origem 411×546, cerca de 50 kB.
 - **Lula, 16/02/2023**: Ricardo Stuckert/PR, publicação Palácio do Planalto, [retrato oficial](<https://commons.wikimedia.org/wiki/File:Foto_oficial_de_Luiz_In%C3%A1cio_Lula_da_Silva_(ombros).jpg>), [CC BY 2.0](https://creativecommons.org/licenses/by/2.0/). Miniatura de 960 px disponibilizada pelo Wikimedia Commons, cerca de 260 kB. A foto de 2023 é usada por ser o retrato oficial do mandato vigente e ter licença/autoria verificáveis; não é apresentada como foto de campanha de 2026.
+- **Demais retratos 2026**: Ronaldo Caiado (55), Clariana Barão (27), Edmilson Costa (21), Hertz Dias (16), Augusto Cury (70), Romeu Zema (30), Samara Martins (80), Wilson Grassi (35), Renan Santos (14) e Rui Costa Pimenta (29). Todas as páginas de origem e os créditos do Tribunal Superior Eleitoral do Brasil (TSE) estão em [`public/images/credits.html`](public/images/credits.html); cada arquivo identifica CC BY 4.0. Os JPEGs de origem são retratos de candidatura de 161×225 pixels, então a nitidez é limitada ao tamanho publicado pelo Commons. As cópias locais são usadas tanto no comparativo quanto na lista ranqueada.
+
+As cores de identificação da interface (Lula vermelho, Flávio azul e paleta distinta para outros números) são estáveis por número de candidatura, mesmo ao trocar o lado da comparação. A paleta do painel não representa uma declaração de cor partidária oficial.
 
 A interface usa **PNGs com transparência real**: `public/images/flavio-cutout.png` e `lula-cutout.png`. Máscaras de alpha e refinamento do contorno removem o fundo, preservando os pixels das fotografias originais; as versões estilizadas produzidas durante a obtenção das máscaras foram descartadas. Os JPEGs de origem ficam preservados para conferência. Escala de cinza e contraste são aplicados por CSS, sem um fundo retangular. Os testes verificam transparência real e igualdade dos pixels centrais do rosto com a fotografia original. Créditos e links de licença também estão disponíveis na interface. Se uma imagem não carregar, aparece “Retrato indisponível”, sem avatar genérico. Nenhum autor/instituição endossa o painel.
 
@@ -128,9 +131,9 @@ Textos externos são escapados antes de entrar em HTML; links aceitam somente HT
 
 ## PNGs, cores, áudio e animações
 
-O hero contém duas áreas de cor realmente proporcionais **atrás** dos PNGs. A área azul ocupa a razão dos percentuais dos candidatos selecionados e a vermelha ocupa o restante (por exemplo, 75/25). As duas sempre preenchem juntas a largura do hero durante a transição animada. Sem os dois percentuais válidos, o campo fica neutro. Fotos, nomes e números permanecem no mesmo tamanho; é a área de cor que varia.
+O hero contém duas áreas de cor realmente proporcionais **atrás** dos retratos. A cor e o nome de cada faixa acompanham o candidato selecionado, independente de estar à esquerda ou à direita; Lula mantém vermelho, Flávio mantém azul. A largura segue a proporção dos votos publicados dos dois selecionados (por exemplo, 75/25). Sem percentuais válidos, o campo fica neutro.
 
-“Ativar sons” libera o `AudioContext` mediante toque/clique, conforme a política de reprodução do navegador. O áudio começa desligado em cada carregamento. São sinais musicais sintetizados localmente, sem músicas ou CDN: Flávio/22 e Lula/13 têm motivos diferentes, e outros números recebem um motivo determinístico. Virada e vitória usam sequências diferentes. O botão também silencia os sons.
+“Ativar sons” libera o `AudioContext` mediante toque/clique, conforme a política de reprodução do navegador. O áudio começa desligado em cada carregamento. São sinais sintetizados localmente, sem músicas ou CDN: Flávio/22 e Lula/13 têm motivos diferentes; Jair Bolsonaro no acervo de 2022 também recebe tom próprio; outros números recebem um motivo determinístico. Virada e vitória usam sequências diferentes. O botão também silencia os sons.
 
 Uma virada exige troca de liderança em votos entre duas respostas válidas, com horário de fonte mais novo, no mesmo ano/turno/localidade/provedor/comparação. Primeira carga, empate, falta de dados, resposta antiga, troca de fonte ou escolha de outra localidade não criam uma virada. O aviso colorido de virada dura 4,5 segundos e pode ser fechado.
 

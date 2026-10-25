@@ -7,6 +7,7 @@ import {
   linePath,
   regionGroups,
   escapeHtml,
+  candidateColor,
 } from "../public/dashboard-data.js";
 import { toNumber } from "../src/lib/model.mjs";
 const payload = (f, l, fp, lp) => ({
@@ -34,6 +35,11 @@ test("gradiente só usa percentuais finitos e válidos", () => {
 });
 test("empate em votos não declara vencedor", () => {
   assert.equal(comparison(payload(100, 100, 50, 50)).leader, "tie");
+});
+test("cores são identidades fixas do candidato, não da posição de comparação", () => {
+  assert.equal(candidateColor("13"), "#ff405d");
+  assert.equal(candidateColor("22"), "#3195ff");
+  assert.equal(candidateColor("70"), "#e7ad3e");
 });
 test("histórico mantém lacunas e quebra a linha", () => {
   const points = historyPoints([

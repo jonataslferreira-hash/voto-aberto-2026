@@ -50,6 +50,16 @@ export const pct = (value) =>
   percent(value) === null
     ? "—"
     : `${value.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`;
+// Stable panel colors belong to candidate identities, never to screen position.
+const CANDIDATE_COLORS = {
+  13: "#ff405d", 22: "#3195ff", 55: "#48c78e", 27: "#b177ff",
+  21: "#e77a35", 16: "#f05a7e", 70: "#e7ad3e", 30: "#f58b45",
+  80: "#dc65d7", 35: "#28b8b0", 14: "#e6c24c", 29: "#bd6674",
+};
+export function candidateColor(number) {
+  const key = String(number);
+  return Object.hasOwn(CANDIDATE_COLORS, key) ? CANDIDATE_COLORS[key] : "#92a2b8";
+}
 let selectedNumbers = ["22", "13"];
 export function setComparisonNumbers(numbers) {
   selectedNumbers = numbers.map(String);
@@ -85,6 +95,7 @@ export function candidates(payload) {
             : `Candidato ${number}`),
       number,
       party: c?.partido || "Partido não informado",
+      color: candidateColor(number),
     };
   };
   const pair = payload?.comparisonNumbers || selectedNumbers;
@@ -111,9 +122,13 @@ export function comparison(payload) {
         : flavio.votes > lula.votes
           ? "blue"
           : "red";
+  const left = { ...flavio },
+    right = { ...lula };
   return {
     flavio,
     lula,
+    left,
+    right,
     valid,
     diff,
     leader,
