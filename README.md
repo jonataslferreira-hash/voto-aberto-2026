@@ -1,102 +1,123 @@
 # voto-aberto-2026
 
-Painel eleitoral em tempo real para acompanhamento transparente da apuração presidencial brasileira de 2026, com prioridade para TSE e fallback explícito para fontes independentes verificadas.
+Painel eleitoral em tempo real para acompanhamento da apuração presidencial de 2026, com frontend estático para GitHub Pages e backend/proxy externo para integração de dados reais.
 
 ## Arquitetura de fontes e precedência
 
 1. **TSE oficial** (`official-tse`) – autoridade final.
 2. **Feed independente baseado no TSE** (`independent-tse-derived`) – `https://eleicoes2026brasil.com/feed/`.
 3. **Placar do Voto** (`independent-tse-derived`) – `https://placardovoto.com/api/public/v1/`.
-4. **Boletins de urna parciais** (`bu-partial`) – reservado apenas se houver endpoint estruturado e rastreável; CNN é somente referência editorial e não é usada como API.
 
 > O backend nunca mistura silenciosamente fontes diferentes na mesma totalização exibida.
 
-## Modelo normalizado
+## Limitação importante do GitHub Pages
 
-Todos os provedores são convertidos para:
+O GitHub Pages **não executa Node.js**.  
+Portanto:
 
-- `candidatos[]` (`candidato`, `votos`, `percentual`)
-- `votosValidos`
-- `secoesApuradas`, `secoesTotais`
-- `status`: `not-started`, `partial`, `totalized`
-- `updatedAt` (fonte), `retrievedAt` (backend)
-- `provider`, `providerLabel`, `sourceUrl`, `sourceKind`
-- `consolidationWarning`
+- o conteúdo publicado em Pages é apenas o frontend estático (`dist/`);
+- o proxy/backend continua separado (Render/Fly/Railway/Vercel Functions etc.);
+- sem backend configurado, a interface mostra indisponibilidade com explicação da fonte/status e **não inventa números**.
 
-Regras:
+## Configuração da API externa
 
-- indisponível **não vira zero**;
-- números ausentes ficam `null`;
-- sem estimativas inventadas.
+Defina a variável de ambiente abaixo no build estático:
 
-## Backend/proxy
+- `VITE_API_BASE_URL` → URL pública do backend/proxy (ex.: `https://seu-backend.exemplo.com`)
 
-Arquivo: `src/server.mjs`
+O frontend chama:
 
-- endpoints:
-  - `GET /api/results?scope=&provider=`
-  - `GET /api/history?scope=&provider=&window=1h|3h|all`
-  - `GET /api/locations`
-- timeout via `AbortController`
-- cache em memória (compatível com serverless por instância)
-- suporte a `ETag`/`Last-Modified`
-- backoff para `429/503` com `Retry-After`
-- mensagens de erro específicas por provedor
+- `${VITE_API_BASE_URL}/api/results`
+- `${VITE_API_BASE_URL}/api/history`
+- `${VITE_API_BASE_URL}/api/locations`
 
-## Frontend
+## Execução local
 
-Arquivos em `public/`.
-
-- atualização visual a cada **3 segundos** (frontend -> backend)
-- modo simples/completo
-- tema escuro premium responsivo
-- Flávio à esquerda (azul), Lula à direita (vermelho)
-- gradiente proporcional apenas com dados válidos
-- seleção exterior (geral/país/cidade) baseada em IDs realmente retornados em `/api/locations`
-- destaque dinâmico para Austrália/Nova Zelândia/Japão quando disponíveis
-- gráfico de linhas em D3 com janelas 1h, 3h e total
-- lacunas do histórico ficam ausentes (`null`), nunca zero
-
-## Validação manual de URLs reais (executada em desenvolvimento)
-
-Validados com `curl -L`:
-
-- `https://resultados.tse.jus.br/oficial/comum/config/ele-c.json`
-- `https://resultados.tse.jus.br/oficial/ele2026/6258/dados/br/br-c0001-e006258-u.json`
-- `https://eleicoes2026brasil.com/feed/agora.json`
-- `https://eleicoes2026brasil.com/feed/uf/zz.json`
-- `https://eleicoes2026brasil.com/feed/historico.json`
-- `https://placardovoto.com/api/public/v1/resultados/2026/2/presidente/zz/`
-
-Observações:
-
-- granularidade por país/cidade só é anunciada se IDs estruturados existirem na resposta;
-- se um endpoint externo não responder, o painel marca indisponibilidade com origem explícita.
-
-## Como executar
+Instalação:
 
 ```bash
 npm install
-npm start
-# abre em http://localhost:3000
 ```
 
-## Testes
+Executar backend/proxy local:
+
+```bash
+npm start
+# http://localhost:3000
+```
+
+Executar frontend Pages local (Vite):
+
+```bash
+VITE_API_BASE_URL=http://localhost:3000 npm run dev:pages
+```
+
+## Build estático para GitHub Pages
+
+```bash
+VITE_API_BASE_URL=https://seu-backend.exemplo.com npm run build
+```
+
+O build gera:
+
+- `dist/index.html`
+- `dist/404.html` (fallback de navegação para carregamento direto de rota em Pages)
+- `dist/.nojekyll`
+
+## Testes e verificações
 
 ```bash
 npm test
+VITE_API_BASE_URL=https://seu-backend.exemplo.com npm run build
+npm run verify:pages
 ```
 
-Cobertura dos testes adicionados:
+As verificações cobrem:
 
-- parsing dos três formatos
-- fallback automático de prioridade
-- tratamento de 429/retry-after
-- indisponibilidade/ausência de localidade
-- prevenção de dupla contagem em payload agregado
+- build de produção;
+- paths de assets com `/voto-aberto-2026/`;
+- fallback/artefatos obrigatórios de Pages (`404.html` e `.nojekyll`);
+- contrato de indisponibilidade quando `VITE_API_BASE_URL` não está configurada.
 
-## Publicação
+## Publicação automática no GitHub Pages
 
-- **Frontend+Backend juntos**: deploy Node (Render/Fly/Railway/Vercel Node Function)
-- Em Vercel, exponha `src/server.mjs` como função Node e sirva `public/`.
-- Polling de 3s permanece no frontend, enquanto o backend aplica cache e limites.
+Workflow: `.github/workflows/deploy-pages.yml`
+
+- dispara em `push` na branch `main`;
+- usa permissões mínimas:
+  - `contents: read`
+  - `pages: write`
+  - `id-token: write`
+- executa `npm ci`, testes, build e verificação do artefato;
+- usa:
+  - `actions/configure-pages@v5`
+  - `actions/upload-pages-artifact@v3`
+  - `actions/deploy-pages@v4`
+
+URL esperada após publicação:  
+`https://jonataslferreira-hash.github.io/voto-aberto-2026/`
+
+## Ativação do GitHub Pages
+
+Se necessário, habilite em:
+
+1. `Settings` → `Pages`
+2. `Build and deployment` → `Source: GitHub Actions`
+
+## Backend/proxy (fora do GitHub Pages)
+
+Arquivo: `src/server.mjs`
+
+Endpoints:
+
+- `GET /api/results?scope=&provider=`
+- `GET /api/history?scope=&provider=&window=1h|3h|all`
+- `GET /api/locations`
+
+Recursos:
+
+- timeout via `AbortController`;
+- cache em memória por instância;
+- suporte a `ETag`/`Last-Modified`;
+- backoff para `429/503` com `Retry-After`;
+- mensagens de erro específicas por provedor.
