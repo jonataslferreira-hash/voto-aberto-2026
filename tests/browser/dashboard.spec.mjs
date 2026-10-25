@@ -26,13 +26,20 @@ const normalized = {
 };
 async function api(
   page,
-  { result = normalized, history = [], locations = [] } = {},
+  { result = normalized, history = [], locations = [], includeElection = true } = {},
 ) {
   await page.route("http://127.0.0.1:4199/**", async (route) => {
     const url = new URL(route.request().url());
     if (url.pathname === "/api/results")
       await route.fulfill({
-        json: { ...result, scope: url.searchParams.get("scope") },
+        json: {
+          ...result,
+          ...(includeElection ? {
+            year: Number(url.searchParams.get("year") || 2026),
+            turn: Number(url.searchParams.get("turn") || 2),
+          } : {}),
+          scope: url.searchParams.get("scope"),
+        },
       });
     else if (url.pathname === "/api/history")
       await route.fulfill({
@@ -231,7 +238,7 @@ test("sem histórico mantém gráfico vazio; lacunas separam segmentos e tooltip
   await api(page);
   await ready(page);
   await expect(page.locator("#historyChart")).toContainText(
-    "Sem histórico disponível",
+    "Aguardando a primeira atualização válida",
   );
   await page.unroute("http://127.0.0.1:4199/**");
   await api(page, {
@@ -242,10 +249,35 @@ test("sem histórico mantém gráfico vazio; lacunas separam segmentos e tooltip
     ],
   });
   await page.locator("#windowSelect").selectOption("all");
-  const path = page.locator('[data-series="flavio"]');
+  const path = page.locator('[data-series="left"]');
   await expect(path).toHaveAttribute("d", /^M[^L]+ M/);
   await page.locator('[data-point="0"]').focus();
   await expect(page.locator("#chartTooltip")).toContainText("55,00%");
+});
+test("histórico acompanha os dois candidatos escolhidos no primeiro turno", async ({ page }) => {
+  const firstTurn = {
+    ...normalized,
+    turn: 1,
+    updatedAt: "2026-10-25T20:00:00.000Z",
+    candidatos: [
+      { numero: "70", candidato: "Augusto Cury", votos: 120, percentual: 12 },
+      { numero: "13", candidato: "Lula", votos: 500, percentual: 50 },
+      { numero: "22", candidato: "Flávio Bolsonaro", votos: 380, percentual: 38 },
+    ],
+  };
+  await api(page, { result: firstTurn });
+  await ready(page);
+  await expect(page.locator("#connection")).toContainText("API conectada");
+  await page.locator("#turnSelect").selectOption("1");
+  await page.locator("#leftCandidateSelect").selectOption("70");
+  await page.locator("#rightCandidateSelect").selectOption("13");
+  await page.locator("#windowSelect").selectOption("all");
+  await expect(page.locator("#historyLegendFlavio")).toHaveText("Augusto Cury");
+  await expect(page.locator("#historyLegendLula")).toHaveText("Lula");
+  await expect(page.locator('[data-series="left"]')).toHaveAttribute("d", /^M/);
+  await expect(page.locator('[data-series="right"]')).toHaveAttribute("d", /^M/);
+  await expect(page.locator('[data-series="left"]')).toHaveAttribute("style", /#e7ad3e/i);
+  await expect(page.locator("#historyLegendFlavio").locator("xpath=..").locator(".dot")).toHaveCSS("background-color", "rgb(231, 173, 62)");
 });
 test("textos externos são escapados e fontes independentes não ganham selo de vitória", async ({
   page,
@@ -496,7 +528,7 @@ test("URL do backend pode ser configurada e removida no navegador", async ({
 test("backend antigo sem confirmação do turno não exibe eleição incorreta", async ({
   page,
 }) => {
-  await api(page);
+  await api(page, { includeElection: false });
   await ready(page);
   await page.locator("#turnSelect").selectOption("1");
   await expect(page.locator("#notice")).toContainText(

@@ -157,6 +157,69 @@ const state = {
   lastSourceComparison: 0,
   sourceComparisons: [],
 };
+const MAX_LOCAL_HISTORY_POINTS = 720;
+function numberForCandidate(candidate) {
+  if (candidate?.numero != null) return String(candidate.numero);
+  const name = candidate?.candidato || "";
+  if (/fl[aá]vio|jair|bolsonaro/i.test(name)) return "22";
+  if (/\blula\b/i.test(name)) return "13";
+  return null;
+}
+function observationKey(result = state.result) {
+  return result
+    ? `voto-history:${state.year}:${state.turn}:${encodeURIComponent(state.scope)}:${encodeURIComponent(result.provider || "unknown")}`
+    : null;
+}
+function readObservations(result = state.result) {
+  const key = observationKey(result);
+  if (!key) return [];
+  try {
+    const values = JSON.parse(localStorage.getItem(key) || "[]");
+    return Array.isArray(values)
+      ? values.filter((item) => Number.isFinite(Date.parse(item.at)) && item.values && typeof item.values === "object")
+      : [];
+  } catch (error) {
+    console.info("Histórico local não pôde ser lido.", error);
+    return [];
+  }
+}
+function saveHistoryObservation(result) {
+  if (
+    state.year !== 2026 ||
+    !["official-tse", "independent-tse-derived"].includes(result?.sourceKind) ||
+    !Array.isArray(result.candidatos)
+  )
+    return;
+  const hasCount =
+    (Number.isFinite(result.votosValidos) && result.votosValidos > 0) ||
+    result.candidatos.some((candidate) => Number.isFinite(candidate.votos) && candidate.votos > 0);
+  if (!hasCount) return;
+  const timestamp = result.updatedAt || result.retrievedAt;
+  const at = timestamp ? new Date(timestamp) : null;
+  if (!at || Number.isNaN(at.getTime())) return;
+  const values = Object.fromEntries(
+    result.candidatos
+      .map((candidate) => {
+        const number = numberForCandidate(candidate);
+        const value = candidate.percentual;
+        return number && Number.isFinite(value) && value >= 0 && value <= 100
+          ? [number, value]
+          : null;
+      })
+      .filter(Boolean),
+  );
+  if (!Object.keys(values).length) return;
+  const point = { at: at.toISOString(), values };
+  const current = readObservations(result);
+  const previous = current.at(-1);
+  if (previous?.at === point.at && JSON.stringify(previous.values) === JSON.stringify(point.values)) return;
+  current.push(point);
+  try {
+    localStorage.setItem(observationKey(result), JSON.stringify(current.slice(-MAX_LOCAL_HISTORY_POINTS)));
+  } catch (error) {
+    console.info("Este navegador não conseguiu guardar novas observações do histórico.", error);
+  }
+}
 let revision = 0,
   controller = null,
   refreshing = false,
@@ -345,6 +408,7 @@ function renderResult(result) {
   $("liveUpdatesToggle").disabled = state.year !== 2026;
   $("liveUpdatesToggle").checked = state.year === 2026 && liveEnabled;
   state.result = result;
+  saveHistoryObservation(result);
   syncCandidateOptions(result);
   const c = comparison(result),
     pr = progress(result),
@@ -665,21 +729,39 @@ function chooseWorldCountry(event) {
 }
 let chartPoints = [];
 function renderHistory(history) {
-  if (
-    state.year !== 2026 ||
-    state.turn !== 2 ||
-    state.pair.join(",") !== "22,13"
-  )
-    history = {
-      points: [],
-      error:
-        state.year === 2022
-          ? "A série temporal de 2022 não foi arquivada por esta fonte. Os totais do turno selecionado continuam disponíveis na comparação."
-          : state.turn === 1
-            ? "A fonte consultada ainda não fornece uma série histórica validada para o 1º turno."
-            : "Histórico desta comparação não disponível; nenhuma série de outra eleição foi reutilizada.",
-    };
-  const points = historyPoints(history?.points);
+  const selected = candidates(state.result);
+  const localPoints = state.year === 2026
+    ? readObservations().map((sample) => ({
+        at: Date.parse(sample.at),
+        left: Number.isFinite(sample.values[state.pair[0]]) ? sample.values[state.pair[0]] : null,
+        right: Number.isFinite(sample.values[state.pair[1]]) ? sample.values[state.pair[1]] : null,
+      }))
+    : [];
+  const remoteAllowed =
+    state.year === 2026 &&
+    state.turn === 2 &&
+    new Set(state.pair).size === 2 &&
+    state.pair.includes("22") &&
+    state.pair.includes("13");
+  const remotePoints = remoteAllowed
+    ? historyPoints(history?.points).map((point) => ({
+        at: point.at,
+        left: state.pair[0] === "22" ? point.flavio : point.lula,
+        right: state.pair[1] === "22" ? point.flavio : point.lula,
+      }))
+    : [];
+  const remoteFiltered = filterHistoryWindow(remotePoints, state.window);
+  const points = remoteFiltered.length
+    ? remoteFiltered
+    : filterHistoryWindow(localPoints, state.window);
+  const localSelected = !remoteFiltered.length && localPoints.length > 0;
+  const chartHistoryError =
+    state.year === 2022
+      ? "A série temporal de 2022 não foi arquivada. O painel mostra os totais finais do turno sem fingir que são uma sequência ao vivo."
+      : !points.length
+        ? history?.error ||
+          "O gráfico começa no primeiro resultado válido publicado após o fechamento de uma seção. Ainda não há ponto histórico disponível nesta sessão."
+        : null;
   chartPoints = points;
   const min = points[0]?.at || Date.now() - 3600000,
     max = Math.max(points.at(-1)?.at || Date.now(), min + 1000);
@@ -691,7 +773,11 @@ function renderHistory(history) {
         `<line class="chart-grid" x1="42" y1="${y(v)}" x2="662" y2="${y(v)}"/><text class="chart-axis" x="5" y="${y(v) + 4}">${v}%</text>`,
     )
     .join("");
-  const hasValues = points.some((p) => p.flavio !== null || p.lula !== null);
+  const hasValues = points.some((p) => p.left !== null || p.right !== null);
+  const series = [
+    { key: "left", candidate: selected.flavio, number: state.pair[0] },
+    { key: "right", candidate: selected.lula, number: state.pair[1] },
+  ].map((item) => ({ ...item, color: candidateColor(item.number, state.year) }));
   $("historyChart").innerHTML =
     grid +
     [0, 0.5, 1]
@@ -701,31 +787,44 @@ function renderHistory(history) {
       )
       .join("") +
     (hasValues
-        ? ["flavio", "lula"]
+      ? series
           .map(
-            (key, i) =>
-              `<path class="chart-line ${i ? "red" : "blue"}" data-series="${key}" d="${linePath(points, key, x, y)}"/>${points.map((p, index) => (p[key] === null ? "" : `<circle class="chart-point" cx="${x(p.at)}" cy="${y(p[key])}" r="3" fill="${i ? "#ff657e" : "#5d9eff"}"/>`)).join("")}`,
+            ({ key, candidate, color }) =>
+              `<path class="chart-line" style="--series-color:${color}" data-series="${key}" d="${linePath(points, key, x, y)}"/>${points.map((point) => (point[key] === null ? "" : `<circle class="chart-point" cx="${x(point.at)}" cy="${y(point[key])}" r="3" fill="${color}"/>`)).join("")}`,
           )
           .join("") +
         points
-          .map(
-            (p, index) =>
-              `<circle class="chart-hit" cx="${x(p.at)}" cy="${y(p.flavio ?? p.lula ?? 50)}" r="12" tabindex="0" data-point="${index}" aria-label="${e(date(new Date(p.at)))}: ${e(candidates(state.result).flavio.name)} ${e(pct(p.flavio))}; ${e(candidates(state.result).lula.name)} ${e(pct(p.lula))}"><title>${e(date(new Date(p.at)))} · ${e(candidates(state.result).flavio.name)} ${e(pct(p.flavio))} · ${e(candidates(state.result).lula.name)} ${e(pct(p.lula))}</title></circle>`,
-          )
+          .map((point, index) => {
+            const value = point.left ?? point.right;
+            return value === null
+              ? ""
+              : `<circle class="chart-hit" cx="${x(point.at)}" cy="${y(value)}" r="12" tabindex="0" data-point="${index}" aria-label="${e(date(new Date(point.at)))}: ${e(selected.flavio.name)} ${e(pct(point.left))}; ${e(selected.lula.name)} ${e(pct(point.right))}"><title>${e(date(new Date(point.at)))} · ${e(selected.flavio.name)} ${e(pct(point.left))} · ${e(selected.lula.name)} ${e(pct(point.right))}</title></circle>`;
+          })
           .join("")
-      : '<text class="chart-empty" x="352" y="94" text-anchor="middle">Sem histórico disponível</text><text class="chart-empty-note" x="352" y="115" text-anchor="middle">Os pontos aparecerão quando a fonte publicar uma série.</text>');
-  const chartCandidates = candidates(state.result);
-  $("historyLegendFlavio").textContent = chartCandidates.flavio.name;
-  $("historyLegendLula").textContent = chartCandidates.lula.name;
-  $("historySource").textContent = history?.provider
-    ? providerName(history.provider)
-    : "Fonte sem série disponível";
-  $("historyNote").textContent = history?.error
-    ? `Histórico indisponível: ${history.error}`
-    : history?.diagnostics?.length
-      ? history.diagnostics.map((d) => d.message).join(" · ")
-      : "Lacunas permanecem vazias. Nenhum valor é estimado.";
+      : `<text class="chart-empty" x="352" y="94" text-anchor="middle">${state.year === 2022 ? "Histórico temporal não arquivado" : "Aguardando a primeira atualização válida"}</text><text class="chart-empty-note" x="352" y="115" text-anchor="middle">${state.year === 2022 ? "Resultados finais disponíveis; sem série de evolução." : "O gráfico começará quando a fonte publicar votos e percentuais."}</text>`);
+  $("historyLegendFlavio").textContent = selected.flavio.name;
+  $("historyLegendLula").textContent = selected.lula.name;
+  $("historyLegendFlavio").parentElement.style.setProperty("--series-color", series[0].color);
+  $("historyLegendLula").parentElement.style.setProperty("--series-color", series[1].color);
+  $("historyLegendFlavio").parentElement.querySelector(".dot").style.backgroundColor = series[0].color;
+  $("historyLegendLula").parentElement.querySelector(".dot").style.backgroundColor = series[1].color;
+  $("historySource").textContent = remoteFiltered.length
+    ? providerName(history?.provider)
+    : localPoints.length
+    ? `${providerName(state.result?.provider)} · série observada neste navegador`
+      : "Fonte sem série disponível";
+  $("historyNote").textContent = localSelected && points.length
+    ? `Série desde o primeiro resultado válido observado neste navegador (${date(new Date(points[0].at))}). Se uma seção fechou antes desta sessão, só um histórico preservado pela fonte pode preencher esse período. Lacunas permanecem vazias.`
+    : chartHistoryError || (history?.diagnostics?.length
+      ? history.diagnostics.map((diagnostic) => diagnostic.message).join(" · ")
+      : "Lacunas permanecem vazias. Nenhum valor é estimado.");
   $("chartTooltip").hidden = true;
+}
+function filterHistoryWindow(points, windowKey) {
+  if (windowKey === "all") return points.slice().sort((a, b) => a.at - b.at);
+  const horizon = windowKey === "1h" ? 3600000 : 10800000;
+  const min = Date.now() - horizon;
+  return points.filter((point) => point.at >= min && point.at <= Date.now()).sort((a, b) => a.at - b.at);
 }
 function tooltip(event) {
   const node = event.target.closest("[data-point]");
@@ -736,7 +835,7 @@ function tooltip(event) {
   const p = chartPoints[Number(node.dataset.point)];
   const chartCandidates = candidates(state.result);
   $("chartTooltip").textContent =
-    `${date(new Date(p.at))} · ${chartCandidates.flavio.name} ${pct(p.flavio)} · ${chartCandidates.lula.name} ${pct(p.lula)}`;
+    `${date(new Date(p.at))} · ${chartCandidates.flavio.name} ${pct(p.left)} · ${chartCandidates.lula.name} ${pct(p.right)}`;
   $("chartTooltip").hidden = false;
 }
 function syncControls() {
