@@ -37,8 +37,18 @@ jobs:
       - name: Run tests
         run: npm test
 
+      - name: Install browser for UI validation
+        run: npx playwright install --with-deps chromium
+
+      - name: Validate responsive dashboard and unavailable API states
+        run: npm run test:e2e
+        env:
+          VITE_API_BASE_URL: ""
+
       - name: Build static site
         run: npm run build
+        env:
+          VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}
 
       - name: Verify Pages artifact
         run: npm run verify:pages

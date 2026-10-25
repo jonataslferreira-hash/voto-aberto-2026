@@ -3,116 +3,345 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Voto Aberto 2026</title>
+    <meta name="theme-color" content="#090d16" />
+    <meta
+      name="description"
+      content="Central de apuração presidencial 2026. Resultados, estados, exterior e histórico com transparência sobre cada fonte."
+    />
+    <title>Voto Aberto 2026 · Central de apuração</title>
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230b1222'/%3E%3Cpath d='m7 14 7 7L26 8' fill='none' stroke='%235d9eff' stroke-width='4'/%3E%3C/svg%3E"
+    />
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
-    <main id="app" class="dashboard mode-simple" data-gradient="neutral">
-      <div class="dashboard__glow" aria-hidden="true"></div>
-
-      <header class="topbar panel">
-        <div class="brand">
-          <p class="brand__eyebrow">PAINEL ELEITORAL EM TEMPO REAL</p>
-          <h1>Voto Aberto 2026</h1>
-        </div>
-
-        <nav class="scope-nav" aria-label="Escopo principal">
-          <button type="button" class="scope-nav__btn is-active" data-main-scope="brasil">Brasil</button>
-          <button type="button" class="scope-nav__btn" data-main-scope="estados">Estados</button>
-          <button type="button" class="scope-nav__btn" data-main-scope="exterior">Exterior</button>
+    <a class="skip-link" href="#results">Ir para resultados</a>
+    <main id="app" class="dashboard" data-gradient="neutral">
+      <header class="topbar">
+        <a class="brand" href="./" aria-label="Voto Aberto 2026, início"
+          ><span class="brand-mark" aria-hidden="true">✓</span
+          ><span
+            ><strong>VOTO ABERTO <em>2026</em></strong
+            ><small>APURAÇÃO EM TEMPO REAL</small></span
+          ></a
+        >
+        <nav class="scope-nav" aria-label="Localidade principal">
+          <button
+            type="button"
+            data-main-scope="brasil"
+            class="is-active"
+            aria-pressed="true"
+          >
+            Brasil
+          </button>
+          <button type="button" data-main-scope="estados" aria-pressed="false">
+            Estados
+          </button>
+          <button type="button" data-main-scope="exterior" aria-pressed="false">
+            Exterior
+          </button>
         </nav>
-
-        <div class="controls">
-          <label>
-            <span>Modo</span>
-            <select id="modeSelect" aria-label="Modo do painel">
-              <option value="simple">Simples</option>
-              <option value="complete">Completo</option>
-            </select>
-          </label>
-
-          <label>
-            <span>Fonte</span>
-            <select id="providerSelect" aria-label="Fonte de dados">
-              <option value="auto">Automático (prioridade)</option>
-              <option value="tse">TSE oficial</option>
-              <option value="eleicoes-feed">Feed independente</option>
-              <option value="placar-do-voto">Placar do Voto</option>
-            </select>
-          </label>
-
-          <label id="stateFilterWrap" class="is-hidden">
-            <span>Estado</span>
-            <select id="stateSelect" aria-label="Selecionar estado"></select>
-          </label>
-
-          <label id="exteriorFilterWrap" class="is-hidden">
-            <span>Local</span>
-            <select id="exteriorSelect" aria-label="Selecionar país ou cidade">
-              <option value="exterior-geral">Geral (ZZ)</option>
-            </select>
-          </label>
-
-          <button id="settingsBtn" class="settings-btn" type="button" aria-label="Configurações" title="Configurações">⚙</button>
+        <div class="top-actions">
+          <span id="connection" class="connection" role="status"
+            ><i></i> Conectando</span
+          >
+          <div class="segmented mode-toggle" aria-label="Modo do painel">
+            <button
+              type="button"
+              data-mode="complete"
+              aria-pressed="true"
+              class="is-active"
+            >
+              Completo</button
+            ><button type="button" data-mode="simple" aria-pressed="false">
+              Simples
+            </button>
+          </div>
+          <button
+            id="settingsBtn"
+            class="icon-btn"
+            type="button"
+            aria-label="Configurações"
+            aria-expanded="false"
+            aria-controls="settingsPanel"
+          >
+            ⚙
+          </button>
         </div>
       </header>
-
-      <section class="hero panel" aria-live="polite">
-        <aside class="portrait portrait--blue" aria-label="Retrato de Flávio Bolsonaro indisponível por licença">
-          <div class="portrait__shape" aria-hidden="true"></div>
-          <p>Retrato indisponível<br /><small>Licença verificável ausente no repositório</small></p>
-        </aside>
-
-        <div class="hero__center">
-          <div class="hero__status" id="sourceMeta"></div>
-          <div class="hero__totals" id="heroTotals"></div>
-          <div class="hero__bar" id="heroBar" role="img" aria-label="Barra proporcional de votos"></div>
-          <div class="hero__badges" id="heroBadges"></div>
+      <section
+        id="settingsPanel"
+        class="panel settings"
+        hidden
+        aria-label="Configurações do painel"
+      >
+        <label
+          >Fonte de dados<select id="providerSelect">
+            <option value="auto">Automático · prioridade TSE</option>
+            <option value="tse">TSE oficial</option>
+            <option value="eleicoes-feed">Feed independente</option>
+            <option value="placar-do-voto">Placar do Voto</option>
+          </select></label
+        >
+        <p>
+          A prioridade automática tenta a próxima fonte quando a anterior falha.
+          Cada totalização usa uma única fonte.
+        </p>
+        <button id="refreshBtn" type="button" class="text-btn">
+          Atualizar agora ↻
+        </button>
+      </section>
+      <div class="page-heading">
+        <div>
+          <p class="eyebrow">
+            ELEIÇÕES 2026 <span>/</span> PRESIDENTE DA REPÚBLICA
+          </p>
+          <h1>Central de apuração<span class="title-dot">.</span></h1>
         </div>
-
-        <aside class="portrait portrait--red" aria-label="Retrato de Lula indisponível por licença">
-          <div class="portrait__shape" aria-hidden="true"></div>
-          <p>Retrato indisponível<br /><small>Licença verificável ausente no repositório</small></p>
-        </aside>
+        <div class="heading-meta">
+          <span class="live-label"><i></i> MONITORAMENTO</span
+          ><span>Dados abertos. Informação transparente.</span>
+        </div>
+      </div>
+      <section class="scope-strip" aria-label="Localidade selecionada">
+        <div class="scope-title">
+          <span class="scope-icon" aria-hidden="true">◎</span
+          ><strong id="scopeLabel">Brasil</strong
+          ><span class="muted">Presidente</span>
+        </div>
+        <div class="scope-filters">
+          <label id="stateFilterWrap" hidden
+            ><span class="sr-only">Selecionar estado</span
+            ><select
+              id="stateSelect"
+              aria-label="Selecionar estado"
+            ></select></label
+          ><label id="exteriorFilterWrap" hidden
+            ><span class="sr-only">Selecionar país ou cidade</span
+            ><select id="exteriorSelect" aria-label="Selecionar país ou cidade">
+              <option value="exterior-geral">Exterior · geral</option>
+            </select></label
+          ><span id="resultStatus" class="status-pill"
+            >Aguardando consulta</span
+          >
+        </div>
       </section>
-
-      <section class="cards">
-        <article class="panel card" id="cardApuracao"></article>
-        <article class="panel card" id="cardCandidatos"></article>
-        <article class="panel card" id="cardDiferenca"></article>
-        <article class="panel card" id="cardRegioes"></article>
-
-        <article class="panel card mode-complete" id="cardMapa">
-          <h2>Mapa por estado</h2>
-          <div class="map-legend" id="mapLegend"></div>
-          <svg id="brazilMap" viewBox="0 0 620 360" role="img" aria-label="Cartograma clicável dos estados"></svg>
-        </article>
-
-        <article class="panel card mode-complete" id="cardExterior">
-          <div class="tabs" role="tablist" aria-label="Votos no exterior">
-            <button type="button" class="tab is-active" data-exterior-tab="geral">Geral</button>
-            <button type="button" class="tab" data-exterior-tab="pais">Por país</button>
-            <button type="button" class="tab" data-exterior-tab="cidade">Por cidade</button>
+      <section
+        id="results"
+        class="hero panel"
+        aria-label="Resultado presidencial"
+      >
+        <div class="hero-topline">
+          <span>DISPUTA PRESIDENCIAL</span
+          ><span id="heroUpdate">Horário da fonte não informado</span>
+        </div>
+        <div class="hero-stage">
+          <div id="heroTotals" class="hero-candidates"></div>
+          <div class="hero-center">
+            <article class="panel summary" id="cardApuracao"></article>
+            <div id="heroBar" class="hero-bar"></div>
+            <div class="hero-bottom">
+              <span id="heroDifference">Diferença não disponível</span
+              ><span id="heroSource">Fonte não disponível</span>
+            </div>
           </div>
-          <div id="exteriorContent"></div>
-        </article>
-
-        <article class="panel card mode-complete" id="cardUpdates"></article>
-
-        <article class="panel card mode-complete" id="cardHistorico">
-          <div class="card__header">
-            <h2>Histórico de porcentagens</h2>
-            <select id="windowSelect" aria-label="Janela do histórico">
-              <option value="1h">1h</option>
-              <option value="3h">3h</option>
-              <option value="all">Total</option>
-            </select>
-          </div>
-          <svg id="historyChart" viewBox="0 0 680 260" role="img" aria-label="Gráfico de linha com evolução das porcentagens"></svg>
-        </article>
+        </div>
       </section>
+      <div id="notice" class="notice" role="status"></div>
+
+      <div class="complete-content">
+        <section class="detail-grid" aria-label="Resultados por localidade">
+          <article class="panel map-card" id="cardMapa">
+            <div class="card-heading">
+              <div>
+                <p class="eyebrow">O VOTO EM CADA ESTADO</p>
+                <h2>Mapa da apuração</h2>
+              </div>
+              <span class="small-tag">27 UFs</span>
+            </div>
+            <div class="map-layout">
+              <svg
+                id="brazilMap"
+                viewBox="0 0 500 490"
+                role="group"
+                aria-label="Mapa geográfico interativo dos estados brasileiros"
+              ></svg>
+              <div id="mapDetail" class="map-detail"></div>
+            </div>
+            <div class="map-legend">
+              <span><i class="dot blue"></i>Flávio na frente</span
+              ><span><i class="dot red"></i>Lula na frente</span
+              ><span><i class="dot tie"></i>Empate em votos</span
+              ><span><i class="dot unknown"></i>Sem dados</span>
+            </div>
+            <p class="footnote">
+              Intensidade proporcional à margem. Selecione uma UF no mapa ou no
+              menu Estados.
+            </p>
+          </article>
+          <article class="panel regions-card" id="cardRegioes">
+            <div class="card-heading">
+              <div>
+                <p class="eyebrow">PANORAMA NACIONAL</p>
+                <h2>Votos por região</h2>
+              </div>
+              <span class="small-tag">5 regiões</span>
+            </div>
+            <div id="regionRows"></div>
+            <p class="footnote">
+              Soma por provedor, sem combinar fontes. Cobertura e horários
+              informados em cada região.
+            </p>
+          </article>
+          <article class="panel exterior-card" id="cardExterior">
+            <div class="card-heading">
+              <div>
+                <p class="eyebrow">BRASILEIROS NO MUNDO</p>
+                <h2>Exterior <span aria-hidden="true">↗</span></h2>
+              </div>
+              <span id="exteriorCount" class="small-tag">ZZ</span>
+            </div>
+            <div
+              id="exteriorSources"
+              class="exterior-sources"
+              aria-label="Comparação de fontes do exterior"
+            ></div>
+            <div
+              class="segmented tabs"
+              role="tablist"
+              aria-label="Resultados do exterior"
+            >
+              <button
+                type="button"
+                role="tab"
+                aria-selected="true"
+                aria-controls="exteriorContent"
+                id="tab-geral"
+                data-exterior-tab="geral"
+                class="is-active"
+              >
+                Geral</button
+              ><button
+                type="button"
+                role="tab"
+                aria-selected="false"
+                aria-controls="exteriorContent"
+                id="tab-pais"
+                data-exterior-tab="pais"
+                tabindex="-1"
+              >
+                Por país</button
+              ><button
+                type="button"
+                role="tab"
+                aria-selected="false"
+                aria-controls="exteriorContent"
+                id="tab-cidade"
+                data-exterior-tab="cidade"
+                tabindex="-1"
+              >
+                Por cidade
+              </button>
+            </div>
+            <p class="footnote">
+              Encerramento da votação não equivale à publicação dos votos.
+            </p>
+            <div
+              id="exteriorContent"
+              role="tabpanel"
+              aria-labelledby="tab-geral"
+            ></div>
+          </article>
+        </section>
+        <section class="lower-grid">
+          <article class="panel history-card" id="cardHistorico">
+            <div class="card-heading">
+              <div>
+                <p class="eyebrow">EVOLUÇÃO DA DISPUTA</p>
+                <h2>Histórico de votos</h2>
+              </div>
+              <label
+                ><span class="sr-only">Janela do histórico</span
+                ><select id="windowSelect" aria-label="Janela do histórico">
+                  <option value="1h">Última hora</option>
+                  <option value="3h">Últimas 3 horas</option>
+                  <option value="all">Total da apuração</option>
+                </select></label
+              >
+            </div>
+            <div class="chart-legend">
+              <span><i class="dot blue"></i>Flávio Bolsonaro</span
+              ><span><i class="dot red"></i>Lula</span
+              ><span id="historySource"></span>
+            </div>
+            <div class="chart-wrap">
+              <svg
+                id="historyChart"
+                viewBox="0 0 680 220"
+                role="img"
+                aria-label="Evolução dos percentuais; lacunas representam dados ausentes"
+              ></svg>
+              <div
+                id="chartTooltip"
+                class="chart-tooltip"
+                hidden
+                role="status"
+              ></div>
+            </div>
+            <p class="footnote" id="historyNote">
+              Lacunas permanecem vazias. Nenhum valor é estimado.
+            </p>
+          </article>
+          <article class="panel provenance-card">
+            <div class="card-heading">
+              <div>
+                <p class="eyebrow">TRANSPARÊNCIA EM PRIMEIRO LUGAR</p>
+                <h2>Sobre os dados</h2>
+              </div>
+              <span class="shield" aria-hidden="true">◇</span>
+            </div>
+            <div id="sourceMeta"></div>
+            <p class="image-credits">
+              Fotos: TSE (2026), CC BY 4.0 · Ricardo Stuckert/PR (2023), CC BY
+              2.0.
+              <a
+                id="imageCredits"
+                href="./images/credits.html"
+                target="_blank"
+                rel="noopener"
+                >Créditos e licenças ↗</a
+              >
+            </p>
+            <details id="sourceDiagnostics">
+              <summary>Diagnóstico das fontes</summary>
+              <div id="diagnostics"></div>
+            </details>
+          </article>
+        </section>
+        <section class="panel updates-card" id="cardUpdates">
+          <div class="updates-heading">
+            <span class="live-label"><i></i> ATUALIZAÇÕES</span
+            ><small>Recebidas nesta sessão</small>
+          </div>
+          <ul id="updates" class="updates"></ul>
+        </section>
+      </div>
+      <footer>
+        <span class="footer-brand">VOTO ABERTO <b>2026</b></span>
+        <p>Painel independente. Resultados sujeitos à confirmação do TSE.</p>
+        <a
+          href="https://resultados.tse.jus.br/"
+          target="_blank"
+          rel="noopener noreferrer"
+          >Consultar o TSE ↗</a
+        >
+      </footer>
     </main>
-
+    <noscript
+      >Ative o JavaScript para consultar o painel. Nenhum resultado é exibido
+      sem uma fonte válida.</noscript
+    >
     <script type="module" src="./app.js"></script>
   </body>
 </html>

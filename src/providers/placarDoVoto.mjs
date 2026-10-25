@@ -1,33 +1,76 @@
-import { buildNormalized, buildUnavailable, candidate, toNumber } from '../lib/model.mjs';
-import { fetchWithPolicy } from '../lib/http-cache.mjs';
+import {
+  buildNormalized,
+  buildUnavailable,
+  candidate,
+  toNumber,
+} from "../lib/model.mjs";
+import { fetchWithPolicy } from "../lib/http-cache.mjs";
 
-const BASE = 'https://placardovoto.com/api/public/v1';
+const BASE = "https://placardovoto.com/api/public/v1";
 
 function mapCandidates(list) {
   if (!Array.isArray(list)) return [];
   return list
-    .filter((item) => /lula|fl[aá]vio/i.test(item.nome || item.name || ''))
-    .map((item) => candidate(item.nome || item.name, toNumber(item.votos), toNumber(item.percentual)));
+    .filter((item) => /lula|fl[aá]vio/i.test(item.nome || item.name || ""))
+    .map((item) =>
+      candidate(
+        item.nome || item.name,
+        toNumber(item.votos),
+        toNumber(item.percentual),
+      ),
+    );
 }
 
 export function parsePlacarJson(json, sourceUrl) {
-  const payload = json?.data || json;
-  const candidatos = mapCandidates(payload?.candidatos || payload?.resultado?.candidatos);
-  if (!candidatos.length) {
-    throw new Error('Formato Placar do Voto inválido: candidatos ausentes.');
-  }
-
+  const payload = json?.result || json?.data || json;
+  const list =
+    payload?.candidates ||
+    payload?.candidatos ||
+    payload?.resultado?.candidatos;
+  const candidatos = mapCandidates(
+    Array.isArray(list)
+      ? list.map((c) => ({
+          ...c,
+          votos: c.votes ?? c.votos,
+          percentual: c.percent ?? c.percentual,
+        }))
+      : [],
+  );
+  if (!candidatos.length)
+    throw new Error("Formato Placar do Voto inválido: candidatos ausentes.");
+  const denominator = toNumber(
+    payload?.candidatePercentVotes ??
+      payload?.votos_validos ??
+      payload?.votosValidos,
+  );
+  if (denominator === 0) for (const c of candidatos) c.percentual = null;
+  const rawDate = payload?.updatedAt ?? payload?.updated_at;
   return buildNormalized({
-    provider: 'placar-do-voto',
+    provider: "placar-do-voto",
     sourceUrl,
-    sourceKind: 'independent-tse-derived',
-    updatedAt: payload?.updated_at || payload?.updatedAt || null,
-    votosValidos: toNumber(payload?.votos_validos || payload?.votosValidos),
-    secoesApuradas: toNumber(payload?.secoes_apuradas || payload?.secoesApuradas),
-    secoesTotais: toNumber(payload?.secoes_totais || payload?.secoesTotais),
+    sourceKind: "independent-tse-derived",
+    updatedAt:
+      typeof rawDate === "number"
+        ? new Date(rawDate).toISOString()
+        : rawDate || null,
+    votosValidos: toNumber(
+      payload?.validVotes ?? payload?.votos_validos ?? payload?.votosValidos,
+    ),
+    secoesApuradas: toNumber(
+      payload?.counted ?? payload?.secoes_apuradas ?? payload?.secoesApuradas,
+    ),
+    secoesTotais: toNumber(
+      payload?.sections ?? payload?.secoes_totais ?? payload?.secoesTotais,
+    ),
     candidatos,
-    progressPercent: toNumber(payload?.percentual_apurado || payload?.percentualApurado),
-    consolidationWarning: 'Resultado de provedor independente. Confirmar com TSE oficial.'
+    progressPercent: toNumber(
+      payload?.progress ??
+        payload?.percentual_apurado ??
+        payload?.percentualApurado,
+    ),
+    consolidationWarning:
+      json?.freshness?.warning ||
+      "Resultado de provedor independente. Confirmar com TSE oficial.",
   });
 }
 
@@ -38,33 +81,47 @@ function buildPath(scope) {
 }
 
 export async function fetchPlacar(scope, fetchImpl = fetch) {
+  if (scope.kind === "exterior-pais" || scope.kind === "exterior-cidade")
+    return buildUnavailable(
+      "placar-do-voto",
+      BASE,
+      "Contrato do Placar por país/cidade não validado.",
+    );
   const url = buildPath(scope);
   try {
-    const { data } = await fetchWithPolicy({
-      key: `placar:${scope.uf}:${scope.city || ''}`,
+    const { data, fetchedAt } = await fetchWithPolicy({
+      key: `placar:${scope.uf}:${scope.city || ""}`,
       url,
       cacheTtlMs: 30000,
       timeoutMs: 6000,
-      fetchImpl
+      fetchImpl,
     });
-    return parsePlacarJson(data, url);
+    return { ...parsePlacarJson(data, url), retrievedAt: fetchedAt };
   } catch (error) {
-    return buildUnavailable('placar-do-voto', url, `Placar do Voto indisponível: ${error.message}`);
+    return buildUnavailable(
+      "placar-do-voto",
+      url,
+      `Placar do Voto indisponível: ${error.message}`,
+    );
   }
 }
 
 export async function fetchPlacarHistory(scope, fetchImpl = fetch) {
   const url = `${BASE}/historico/2026/2/presidente/${scope.uf}/`;
   try {
-    const { data } = await fetchWithPolicy({
+    const { data, fetchedAt } = await fetchWithPolicy({
       key: `placar-historico:${scope.uf}`,
       url,
       cacheTtlMs: 30000,
       timeoutMs: 6000,
-      fetchImpl
+      fetchImpl,
     });
-    return Array.isArray(data?.data) ? data.data : Array.isArray(data) ? data : [];
-  } catch {
-    return [];
+    return Array.isArray(data?.data)
+      ? data.data
+      : Array.isArray(data)
+        ? data
+        : [];
+  } catch (error) {
+    throw new Error(`Histórico do Placar: ${error.message}`);
   }
 }

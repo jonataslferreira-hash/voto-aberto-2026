@@ -1,777 +1,786 @@
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '').trim().replace(/\/+$/, '') || null;
-
-const UF_META = [
-  ['ac', 'Acre', 'Norte', 40, 244],
-  ['al', 'Alagoas', 'Nordeste', 432, 210],
-  ['am', 'Amazonas', 'Norte', 102, 150],
-  ['ap', 'Amapá', 'Norte', 193, 96],
-  ['ba', 'Bahia', 'Nordeste', 376, 184],
-  ['ce', 'Ceará', 'Nordeste', 410, 150],
-  ['df', 'Distrito Federal', 'Centro-Oeste', 296, 176],
-  ['es', 'Espírito Santo', 'Sudeste', 380, 242],
-  ['go', 'Goiás', 'Centro-Oeste', 276, 210],
-  ['ma', 'Maranhão', 'Nordeste', 334, 130],
-  ['mg', 'Minas Gerais', 'Sudeste', 336, 222],
-  ['ms', 'Mato Grosso do Sul', 'Centro-Oeste', 222, 214],
-  ['mt', 'Mato Grosso', 'Centro-Oeste', 224, 168],
-  ['pa', 'Pará', 'Norte', 224, 124],
-  ['pb', 'Paraíba', 'Nordeste', 430, 170],
-  ['pe', 'Pernambuco', 'Nordeste', 408, 186],
-  ['pi', 'Piauí', 'Nordeste', 366, 148],
-  ['pr', 'Paraná', 'Sul', 286, 262],
-  ['rj', 'Rio de Janeiro', 'Sudeste', 360, 264],
-  ['rn', 'Rio Grande do Norte', 'Nordeste', 446, 160],
-  ['ro', 'Rondônia', 'Norte', 140, 226],
-  ['rr', 'Roraima', 'Norte', 144, 88],
-  ['rs', 'Rio Grande do Sul', 'Sul', 270, 302],
-  ['sc', 'Santa Catarina', 'Sul', 288, 286],
-  ['se', 'Sergipe', 'Nordeste', 414, 212],
-  ['sp', 'São Paulo', 'Sudeste', 326, 276],
-  ['to', 'Tocantins', 'Norte', 272, 156]
-].map(([uf, nome, regiao, x, y]) => ({ uf, nome, regiao, x, y }));
-
-const REGION_ORDER = ['Norte', 'Nordeste', 'Centro-Oeste', 'Sudeste', 'Sul'];
-
+import { BRAZIL_MAP } from "./brazil-map.js";
+import {
+  STATES,
+  escapeHtml as e,
+  candidates,
+  comparison,
+  progress,
+  statusLabel,
+  regionGroups,
+  historyPoints,
+  linePath,
+  int,
+  pct,
+} from "./dashboard-data.js";
+const PORTRAITS = {
+  blue: new URL("./images/flavio-2026.jpg", import.meta.url).href,
+  red: new URL("./images/lula-oficial-2023.jpg", import.meta.url).href,
+};
+const API_BASE_URL =
+  (import.meta.env.VITE_API_BASE_URL || "").trim().replace(/\/+$/, "") || null;
+const $ = (id) => document.getElementById(id);
 const state = {
-  provider: 'auto',
-  mode: 'simple',
-  window: '1h',
-  mainScope: 'brasil',
-  scopeRaw: 'brasil',
-  selectedState: 'sp',
-  selectedExterior: 'exterior-geral',
-  exteriorTab: 'geral',
-  refreshInFlight: false,
-  pendingRefresh: false,
-  stateSnapshots: new Map(),
-  lastStateSnapshotAt: 0,
+  mode: "complete",
+  provider: "auto",
+  scope: "brasil",
+  mainScope: "brasil",
+  uf: "sp",
+  exterior: "exterior-geral",
+  tab: "geral",
+  window: "1h",
+  locations: [],
+  snapshots: new Map(),
+  exteriorResults: new Map(),
   updates: [],
-  exteriorLocations: []
+  result: null,
+  history: null,
+  lastSnapshot: 0,
+  lastLocations: 0,
+  lastExterior: 0,
+  lastSourceComparison: 0,
+  sourceComparisons: [],
 };
-
-const els = {
-  app: document.querySelector('#app'),
-  sourceMeta: document.querySelector('#sourceMeta'),
-  heroTotals: document.querySelector('#heroTotals'),
-  heroBar: document.querySelector('#heroBar'),
-  heroBadges: document.querySelector('#heroBadges'),
-  providerSelect: document.querySelector('#providerSelect'),
-  modeSelect: document.querySelector('#modeSelect'),
-  windowSelect: document.querySelector('#windowSelect'),
-  stateSelect: document.querySelector('#stateSelect'),
-  exteriorSelect: document.querySelector('#exteriorSelect'),
-  stateFilterWrap: document.querySelector('#stateFilterWrap'),
-  exteriorFilterWrap: document.querySelector('#exteriorFilterWrap'),
-  cardApuracao: document.querySelector('#cardApuracao'),
-  cardCandidatos: document.querySelector('#cardCandidatos'),
-  cardDiferenca: document.querySelector('#cardDiferenca'),
-  cardRegioes: document.querySelector('#cardRegioes'),
-  cardUpdates: document.querySelector('#cardUpdates'),
-  exteriorContent: document.querySelector('#exteriorContent'),
-  chart: document.querySelector('#historyChart'),
-  map: document.querySelector('#brazilMap'),
-  mapLegend: document.querySelector('#mapLegend')
+let revision = 0,
+  controller = null,
+  refreshing = false,
+  refreshAgain = false,
+  snapshotController = null,
+  snapshotBusy = false;
+const providerName = (p) =>
+  ({
+    tse: "TSE oficial",
+    "eleicoes-feed": "Feed independente",
+    "placar-do-voto": "Placar do Voto",
+  })[p] || "Indisponível";
+const sourceKind = (p) =>
+  ({
+    "official-tse": "TSE oficial",
+    "independent-tse-derived": "Feed independente baseado no TSE",
+    "bu-partial": "Boletim de urna parcial",
+  })[p?.sourceKind] || "Dados indisponíveis";
+const date = (value, timeOnly = false) => {
+  if (!value) return "Não informado";
+  const d = new Date(value);
+  return Number.isNaN(d.getTime())
+    ? "Horário inválido"
+    : d.toLocaleString("pt-BR", {
+        timeZone: "America/Bahia",
+        ...(timeOnly
+          ? { hour: "2-digit", minute: "2-digit", second: "2-digit" }
+          : {
+              day: "2-digit",
+              month: "2-digit",
+              hour: "2-digit",
+              minute: "2-digit",
+            }),
+      });
 };
-
-const MAIN_SCOPE_BUTTONS = Array.from(document.querySelectorAll('[data-main-scope]'));
-const EXTERIOR_TAB_BUTTONS = Array.from(document.querySelectorAll('[data-exterior-tab]'));
-
-const POLL_INTERVAL_MS = 3000;
-const SNAPSHOT_REFRESH_MS = 45000;
-let pollTimer = null;
-let activeAbortController = null;
-
-function escapeHtml(value) {
-  return String(value ?? '')
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#39;');
+function scopeLabel() {
+  return state.mainScope === "brasil"
+    ? "Brasil"
+    : state.mainScope === "estados"
+      ? STATES.find((s) => s.uf === state.uf)?.name || "Estado"
+      : state.locations.find((l) => locationScope(l) === state.exterior)
+          ?.nome || "Exterior · geral";
 }
-
-function formatInt(value) {
-  if (value === null || value === undefined || Number.isNaN(Number(value))) return '—';
-  return Number(value).toLocaleString('pt-BR');
-}
-
-function formatPct(value) {
-  if (value === null || value === undefined || Number.isNaN(Number(value))) return '—';
-  return `${Number(value).toFixed(2)}%`;
-}
-
-function formatDate(value) {
-  if (!value) return 'não informado';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return escapeHtml(String(value));
-  return date.toLocaleString('pt-BR');
-}
-
-function toStatusLabel(status) {
-  if (status === 'totalized') return 'Totalizado';
-  if (status === 'partial') return 'Parcial';
-  return 'Aguardando apuração';
-}
-
-function appendUpdate(kind, detail) {
-  state.updates.unshift({
-    at: new Date().toISOString(),
-    kind,
-    detail
-  });
-  state.updates = state.updates.slice(0, 10);
-}
-
-function buildApiUrl(pathname, query = {}) {
-  if (!API_BASE_URL) return null;
-  const url = new URL(`${API_BASE_URL}${pathname}`);
-  for (const [k, v] of Object.entries(query)) {
-    if (v !== null && v !== undefined && v !== '') url.searchParams.set(k, v);
+const locationScope = (l) =>
+  `${l.tipo === "country" ? "exterior-pais" : "exterior-cidade"}:${l.id}`;
+function safeLink(url, label) {
+  try {
+    const u = new URL(url);
+    if (!["https:", "http:"].includes(u.protocol)) return "URL não informada";
+    return `<a href="${e(u.href)}" target="_blank" rel="noopener noreferrer">${e(label || u.href)} ↗</a>`;
+  } catch (error) {
+    return "URL não informada";
   }
-  return url.toString();
 }
-
-async function getJSON(pathname, query = {}, signal) {
-  const url = buildApiUrl(pathname, query);
-  if (!url) throw new Error('API_BASE_URL_NOT_CONFIGURED');
-  const response = await fetch(url, { signal });
-  const isJson = response.headers.get('content-type')?.includes('application/json');
-  if (!response.ok) {
-    let message = `Falha ${response.status}`;
-    if (isJson) {
-      try {
-        const payload = await response.json();
-        if (payload?.error) message = payload.error;
-      } catch {
-        // no-op
-      }
-    }
-    throw new Error(message);
-  }
-  return response.json();
-}
-
-function inferCandidates(payload) {
-  const base = Array.isArray(payload?.candidatos) ? payload.candidatos : [];
-  const empty = { candidato: null, votos: null, percentual: null };
-
-  const flavio = base.find((c) => /fl[aá]vio/i.test(c.candidato || '')) || empty;
-  const lula = base.find((c) => /lula/i.test(c.candidato || '')) || empty;
-
+function unavailable(message) {
   return {
-    flavio: {
-      name: flavio.candidato || 'Flávio Bolsonaro',
-      votes: flavio.votos ?? null,
-      pct: flavio.percentual ?? null
-    },
-    lula: {
-      name: lula.candidato || 'Luiz Inácio Lula da Silva',
-      votes: lula.votos ?? null,
-      pct: lula.percentual ?? null
-    }
-  };
-}
-
-function getScopeLabel() {
-  if (state.mainScope === 'brasil') return 'Brasil';
-  if (state.mainScope === 'estados') {
-    const item = UF_META.find((uf) => uf.uf === state.selectedState);
-    return item ? `${item.nome} (${item.uf.toUpperCase()})` : 'Estado';
-  }
-  if (state.mainScope === 'exterior') {
-    if (state.selectedExterior === 'exterior-geral') return 'Exterior (geral)';
-    const opt = state.exteriorLocations.find((x) => x.value === state.selectedExterior);
-    return opt ? opt.label : 'Exterior';
-  }
-  return 'Brasil';
-}
-
-function computeGradient(flavioPct, lulaPct) {
-  const hasPercent = Number.isFinite(Number(flavioPct)) && Number.isFinite(Number(lulaPct));
-  if (!hasPercent) {
-    els.app.style.setProperty('--split', '50%');
-    els.app.dataset.gradient = 'neutral';
-    return;
-  }
-  const blue = Math.max(0, Math.min(100, Number(flavioPct)));
-  els.app.style.setProperty('--split', `${blue}%`);
-  els.app.dataset.gradient = blue === 50 ? 'neutral' : blue > 50 ? 'blue' : 'red';
-}
-
-function computeBadges(result, flavio, lula) {
-  const badges = [];
-  const done = Number(result?.secoesApuradas);
-  const total = Number(result?.secoesTotais);
-  const ratio = Number.isFinite(done) && Number.isFinite(total) && total > 0 ? done / total : null;
-  const diffPct = Number.isFinite(flavio.pct) && Number.isFinite(lula.pct) ? Math.abs(flavio.pct - lula.pct) : null;
-
-  if (result?.status === 'totalized' && Number.isFinite(flavio.votes) && Number.isFinite(lula.votes)) {
-    const winner = flavio.votes >= lula.votes ? flavio.name : lula.name;
-    badges.push({ type: 'official', text: `${winner}: Matematicamente eleito (resultado oficial totalizado).` });
-    return badges;
-  }
-
-  if (result?.status === 'partial' && ratio !== null && ratio >= 0.9 && diffPct !== null && diffPct >= 5) {
-    const leader = (Number(flavio.votes) || 0) >= (Number(lula.votes) || 0) ? flavio.name : lula.name;
-    badges.push({ type: 'informative', text: `Vantagem consolidada (${leader}) — cálculo informativo do painel.` });
-  }
-
-  return badges;
-}
-
-function renderSource(result) {
-  const warning = result?.consolidationWarning ? `<p class="warning">${escapeHtml(result.consolidationWarning)}</p>` : '';
-  const sourceUrl = result?.sourceUrl || '';
-  const safeUrl = /^https?:\/\//.test(sourceUrl) ? sourceUrl : '';
-  const sourceLink = safeUrl
-    ? `<a href="${escapeHtml(safeUrl)}" target="_blank" rel="noreferrer">${escapeHtml(safeUrl)}</a>`
-    : 'não informado';
-
-  els.sourceMeta.innerHTML = `
-    <div class="hero__kpi"><span>Fonte</span><strong>${escapeHtml(result?.displaySource || 'Dados indisponíveis')}</strong></div>
-    <div class="hero__kpi"><span>Provedor</span><strong>${escapeHtml(result?.providerLabel || 'Indisponível')}</strong></div>
-    <div class="hero__kpi"><span>Status</span><strong>${escapeHtml(toStatusLabel(result?.status))}</strong></div>
-    <div class="hero__kpi"><span>Localidade</span><strong>${escapeHtml(getScopeLabel())}</strong></div>
-    <div class="hero__kpi"><span>Última atualização</span><strong>${escapeHtml(formatDate(result?.updatedAt))}</strong></div>
-    <div class="hero__kpi"><span>Coletado em</span><strong>${escapeHtml(formatDate(result?.retrievedAt))}</strong></div>
-    <div class="hero__source-url"><span>URL da origem:</span> ${sourceLink}</div>
-    ${warning}
-  `;
-}
-
-function renderHero(result, flavio, lula) {
-  els.heroTotals.innerHTML = `
-    <article class="candidate candidate--blue">
-      <h2>${escapeHtml(flavio.name)}</h2>
-      <p class="candidate__votes">${escapeHtml(formatInt(flavio.votes))}</p>
-      <p class="candidate__label">votos</p>
-      <p class="candidate__pct">${escapeHtml(formatPct(flavio.pct))}</p>
-    </article>
-
-    <article class="candidate candidate--red">
-      <h2>${escapeHtml(lula.name)}</h2>
-      <p class="candidate__votes">${escapeHtml(formatInt(lula.votes))}</p>
-      <p class="candidate__label">votos</p>
-      <p class="candidate__pct">${escapeHtml(formatPct(lula.pct))}</p>
-    </article>
-  `;
-
-  const splitBlue = Number.isFinite(Number(flavio.pct)) ? Math.max(0, Math.min(100, Number(flavio.pct))) : 50;
-  const splitRed = Number.isFinite(Number(lula.pct)) ? Math.max(0, Math.min(100, Number(lula.pct))) : 50;
-  const hasLive = Number.isFinite(Number(flavio.pct)) && Number.isFinite(Number(lula.pct));
-
-  els.heroBar.innerHTML = `
-    <div class="hero__bar-track">
-      <span class="hero__bar-fill hero__bar-fill--blue" style="width:${splitBlue}%"></span>
-      <span class="hero__bar-fill hero__bar-fill--red" style="width:${splitRed}%"></span>
-    </div>
-    <div class="hero__bar-legend">
-      <span>Flávio ${escapeHtml(formatPct(flavio.pct))}</span>
-      <span>Lula ${escapeHtml(formatPct(lula.pct))}</span>
-    </div>
-    ${hasLive ? '' : '<p class="warning">Sem percentuais válidos para gradiente local. Exibindo tema neutro.</p>'}
-  `;
-
-  const badges = computeBadges(result, flavio, lula);
-  els.heroBadges.innerHTML = badges.length
-    ? badges.map((badge) => `<span class="badge badge--${badge.type}">${escapeHtml(badge.text)}</span>`).join('')
-    : '<span class="badge badge--muted">Sem gatilho estatístico verificável para etiqueta de vitória.</span>';
-}
-
-function renderCardApuracao(result) {
-  els.cardApuracao.innerHTML = `
-    <h2>Urnas apuradas e atualização</h2>
-    <div class="list-kv">
-      <p><span>Seções apuradas</span><strong>${escapeHtml(formatInt(result?.secoesApuradas))}</strong></p>
-      <p><span>Seções totais</span><strong>${escapeHtml(formatInt(result?.secoesTotais))}</strong></p>
-      <p><span>Votos válidos</span><strong>${escapeHtml(formatInt(result?.votosValidos))}</strong></p>
-      <p><span>Status</span><strong>${escapeHtml(toStatusLabel(result?.status))}</strong></p>
-      <p><span>Última atualização da fonte</span><strong>${escapeHtml(formatDate(result?.updatedAt))}</strong></p>
-    </div>
-  `;
-}
-
-function renderCardCandidatos(flavio, lula) {
-  els.cardCandidatos.innerHTML = `
-    <h2>Percentuais e votos</h2>
-    <div class="mini-cards">
-      <article class="mini mini--blue">
-        <h3>${escapeHtml(flavio.name)}</h3>
-        <p>${escapeHtml(formatInt(flavio.votes))} votos</p>
-        <strong>${escapeHtml(formatPct(flavio.pct))}</strong>
-      </article>
-      <article class="mini mini--red">
-        <h3>${escapeHtml(lula.name)}</h3>
-        <p>${escapeHtml(formatInt(lula.votes))} votos</p>
-        <strong>${escapeHtml(formatPct(lula.pct))}</strong>
-      </article>
-    </div>
-  `;
-}
-
-function renderCardDiferenca(flavio, lula) {
-  const diff = Number.isFinite(Number(flavio.votes)) && Number.isFinite(Number(lula.votes))
-    ? Math.abs(Number(flavio.votes) - Number(lula.votes))
-    : null;
-  const leader = diff === null ? null : (Number(flavio.votes) >= Number(lula.votes) ? flavio.name : lula.name);
-
-  els.cardDiferenca.innerHTML = `
-    <h2>Diferença de votos</h2>
-    <p class="delta">${escapeHtml(formatInt(diff))}</p>
-    <p class="muted">${leader ? `Liderança atual: ${escapeHtml(leader)}` : 'Dados insuficientes para calcular diferença.'}</p>
-  `;
-}
-
-function aggregateRegions() {
-  const totals = new Map(REGION_ORDER.map((r) => [r, { flavio: 0, lula: 0, states: 0 }]));
-
-  for (const uf of UF_META) {
-    const payload = state.stateSnapshots.get(uf.uf);
-    if (!payload || payload.sourceKind === 'unavailable') continue;
-    const { flavio, lula } = inferCandidates(payload);
-    if (!Number.isFinite(Number(flavio.votes)) || !Number.isFinite(Number(lula.votes))) continue;
-    const entry = totals.get(uf.regiao);
-    entry.flavio += Number(flavio.votes);
-    entry.lula += Number(lula.votes);
-    entry.states += 1;
-  }
-
-  return totals;
-}
-
-function renderCardRegioes() {
-  const totals = aggregateRegions();
-  const lines = [];
-
-  for (const region of REGION_ORDER) {
-    const row = totals.get(region);
-    if (!row || row.states === 0) {
-      lines.push(`<p><span>${escapeHtml(region)}</span><strong>Dados indisponíveis</strong></p>`);
-      continue;
-    }
-    const totalVotes = row.flavio + row.lula;
-    const fPct = totalVotes > 0 ? (row.flavio * 100) / totalVotes : null;
-    const leader = row.flavio >= row.lula ? 'Flávio' : 'Lula';
-    lines.push(`<p><span>${escapeHtml(region)} (${row.states} UFs)</span><strong>${escapeHtml(leader)} ${escapeHtml(formatPct(fPct))}</strong></p>`);
-  }
-
-  els.cardRegioes.innerHTML = `
-    <h2>Resultados por região</h2>
-    <div class="list-kv ${lines.length ? '' : 'is-empty'}">
-      ${lines.length ? lines.join('') : '<p>Nenhum resultado regional disponível.</p>'}
-    </div>
-  `;
-}
-
-function renderUpdatesCard() {
-  els.cardUpdates.innerHTML = `
-    <h2>Últimas atualizações</h2>
-    <ul class="updates">
-      ${state.updates.length
-        ? state.updates.map((item) => `
-          <li>
-            <time>${escapeHtml(formatDate(item.at))}</time>
-            <strong>${escapeHtml(item.kind)}</strong>
-            <span>${escapeHtml(item.detail)}</span>
-          </li>
-        `).join('')
-        : '<li><span>Nenhuma atualização registrada.</span></li>'}
-    </ul>
-  `;
-}
-
-function renderExteriorCard(result) {
-  const locations = state.exteriorLocations;
-  const filtered = locations.filter((item) => {
-    if (state.exteriorTab === 'geral') return item.value === 'exterior-geral';
-    if (state.exteriorTab === 'pais') return item.type === 'country';
-    return item.type === 'city';
-  });
-
-  const available = filtered.length
-    ? filtered
-    : [{ label: 'Sem opções retornadas pelo backend para esta aba.', value: 'none', type: 'none' }];
-
-  const active = locations.find((x) => x.value === state.selectedExterior);
-  const title = state.exteriorTab === 'geral' ? 'Geral' : state.exteriorTab === 'pais' ? 'Por país' : 'Por cidade';
-  const source = result?.sourceKind === 'unavailable'
-    ? 'Dados indisponíveis no provedor selecionado.'
-    : `Exibindo resultados do escopo: ${getScopeLabel()}.`;
-
-  els.exteriorContent.innerHTML = `
-    <h2>Votos no exterior · ${escapeHtml(title)}</h2>
-    <p class="muted">${escapeHtml(source)}</p>
-    <p class="muted">${active ? `Seleção atual: ${active.label}` : 'Selecione um local do exterior quando disponível.'}</p>
-    <div class="chips">
-      ${available.map((item) => `<button type="button" class="chip ${item.value === state.selectedExterior ? 'is-active' : ''}" data-exterior-scope="${escapeHtml(item.value)}" ${item.value === 'none' ? 'disabled' : ''}>${escapeHtml(item.label)}</button>`).join('')}
-    </div>
-  `;
-
-  document.querySelectorAll('[data-exterior-scope]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const value = btn.getAttribute('data-exterior-scope');
-      if (!value || value === 'none') return;
-      state.selectedExterior = value;
-      els.exteriorSelect.value = value;
-      state.mainScope = 'exterior';
-      state.scopeRaw = value;
-      syncScopeControls();
-      queueRefresh();
-    });
-  });
-}
-
-function drawMap() {
-  const selected = state.mainScope === 'estados' ? state.selectedState : null;
-  els.map.innerHTML = UF_META.map((item) => {
-    const payload = state.stateSnapshots.get(item.uf);
-    const { flavio, lula } = inferCandidates(payload || {});
-    const hasData = payload && payload.sourceKind !== 'unavailable' && Number.isFinite(Number(flavio.votes)) && Number.isFinite(Number(lula.votes));
-    const winnerClass = !hasData ? 'unknown' : Number(flavio.votes) >= Number(lula.votes) ? 'blue' : 'red';
-
-    return `
-      <g class="map-state ${winnerClass} ${selected === item.uf ? 'is-selected' : ''}" data-uf="${item.uf}" tabindex="0" role="button" aria-label="Selecionar ${escapeHtml(item.nome)}">
-        <rect x="${item.x}" y="${item.y}" width="46" height="32" rx="8"></rect>
-        <text x="${item.x + 23}" y="${item.y + 20}" text-anchor="middle">${item.uf.toUpperCase()}</text>
-      </g>
-    `;
-  }).join('');
-
-  els.mapLegend.innerHTML = `
-    <span><i class="dot dot--blue"></i> Flávio na frente</span>
-    <span><i class="dot dot--red"></i> Lula na frente</span>
-    <span><i class="dot dot--neutral"></i> Sem dados</span>
-  `;
-
-  els.map.querySelectorAll('.map-state').forEach((node) => {
-    node.addEventListener('click', () => {
-      const uf = node.getAttribute('data-uf');
-      if (!uf) return;
-      state.mainScope = 'estados';
-      state.selectedState = uf;
-      state.scopeRaw = `estado:${uf}`;
-      els.stateSelect.value = uf;
-      syncScopeControls();
-      queueRefresh();
-    });
-
-    node.addEventListener('keydown', (event) => {
-      if (event.key !== 'Enter' && event.key !== ' ') return;
-      event.preventDefault();
-      node.click();
-    });
-  });
-}
-
-function renderHistory(points) {
-  const width = 680;
-  const height = 260;
-  const margin = { top: 14, right: 18, bottom: 28, left: 40 };
-  const innerW = width - margin.left - margin.right;
-  const innerH = height - margin.top - margin.bottom;
-
-  const parsed = Array.isArray(points)
-    ? points.map((point) => ({
-      at: Date.parse(point.at),
-      lula: Number.isFinite(Number(point.lulaPercent)) ? Number(point.lulaPercent) : null,
-      flavio: Number.isFinite(Number(point.flavioPercent)) ? Number(point.flavioPercent) : null
-    })).filter((point) => Number.isFinite(point.at))
-    : [];
-
-  if (!parsed.length) {
-    els.chart.innerHTML = '<text x="50%" y="50%" text-anchor="middle" class="chart-empty">Sem histórico disponível para a janela selecionada.</text>';
-    return;
-  }
-
-  const minTs = Math.min(...parsed.map((p) => p.at));
-  const maxTs = Math.max(...parsed.map((p) => p.at));
-  const safeMax = maxTs === minTs ? minTs + 1 : maxTs;
-
-  const scaleX = (value) => margin.left + ((value - minTs) / (safeMax - minTs)) * innerW;
-  const scaleY = (value) => margin.top + innerH - (value / 100) * innerH;
-
-  const toPath = (key) => {
-    let d = '';
-    let open = false;
-    for (const point of parsed) {
-      const value = point[key];
-      if (value === null) {
-        open = false;
-        continue;
-      }
-      const x = scaleX(point.at);
-      const y = scaleY(value);
-      d += `${open ? 'L' : 'M'}${x.toFixed(2)},${y.toFixed(2)} `;
-      open = true;
-    }
-    return d.trim();
-  };
-
-  const ticksY = [0, 25, 50, 75, 100];
-  const ticksX = [0, 0.25, 0.5, 0.75, 1].map((ratio) => minTs + (safeMax - minTs) * ratio);
-
-  els.chart.innerHTML = `
-    <g class="chart-grid">
-      ${ticksY.map((v) => `<line x1="${margin.left}" y1="${scaleY(v)}" x2="${margin.left + innerW}" y2="${scaleY(v)}"></line>`).join('')}
-    </g>
-    <g class="chart-axis">
-      ${ticksY.map((v) => `<text x="8" y="${scaleY(v) + 4}">${v}%</text>`).join('')}
-      ${ticksX.map((ts) => `<text x="${scaleX(ts)}" y="${height - 6}" text-anchor="middle">${new Date(ts).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</text>`).join('')}
-    </g>
-    <path class="line line--blue" d="${toPath('flavio')}"></path>
-    <path class="line line--red" d="${toPath('lula')}"></path>
-  `;
-}
-
-function renderUnavailable(message) {
-  const payload = {
-    displaySource: 'Dados indisponíveis',
-    providerLabel: API_BASE_URL ? 'Backend/proxy inacessível' : 'Backend/proxy externo não configurado',
-    sourceKind: 'unavailable',
-    status: 'not-started',
-    updatedAt: null,
-    retrievedAt: new Date().toISOString(),
-    sourceUrl: API_BASE_URL || 'não configurado',
-    votosValidos: null,
-    secoesApuradas: null,
-    secoesTotais: null,
+    sourceKind: "unavailable",
+    provider: "unavailable",
     consolidationWarning: message,
-    candidatos: [
-      { candidato: 'Flávio Bolsonaro', votos: null, percentual: null },
-      { candidato: 'Luiz Inácio Lula da Silva', votos: null, percentual: null }
-    ]
+    candidatos: [],
+    updatedAt: null,
   };
-
-  const { flavio, lula } = inferCandidates(payload);
-  computeGradient(null, null);
-  renderSource(payload);
-  renderHero(payload, flavio, lula);
-  renderCardApuracao(payload);
-  renderCardCandidatos(flavio, lula);
-  renderCardDiferenca(flavio, lula);
-  renderCardRegioes();
-  renderExteriorCard(payload);
-  renderUpdatesCard();
-  drawMap();
-  renderHistory([]);
 }
-
-async function updateStateSnapshots(signal) {
-  if (!API_BASE_URL) return;
-  if (Date.now() - state.lastStateSnapshotAt < SNAPSHOT_REFRESH_MS) return;
-
-  const chunks = [];
-  const clone = [...UF_META];
-  while (clone.length) chunks.push(clone.splice(0, 6));
-
-  for (const chunk of chunks) {
-    const tasks = chunk.map(async (item) => {
-      try {
-        const payload = await getJSON('/api/results', {
-          scope: `estado:${item.uf}`,
-          provider: state.provider
-        }, signal);
-        state.stateSnapshots.set(item.uf, payload);
-      } catch {
-        state.stateSnapshots.set(item.uf, { sourceKind: 'unavailable', candidatos: [] });
-      }
-    });
-    await Promise.all(tasks);
-  }
-
-  state.lastStateSnapshotAt = Date.now();
-  drawMap();
-  renderCardRegioes();
-}
-
-async function fetchHistory(signal) {
-  if (!API_BASE_URL) return [];
+async function getJSON(path, query = {}, signal) {
+  if (!API_BASE_URL) throw new Error("API_BASE_URL_NOT_CONFIGURED");
+  let url;
   try {
-    const history = await getJSON('/api/history', {
-      scope: state.scopeRaw,
-      provider: state.provider,
-      window: state.window
-    }, signal);
-    return Array.isArray(history.points) ? history.points : [];
-  } catch {
-    return [];
+    url = new URL(API_BASE_URL + path);
+  } catch (error) {
+    throw new Error(
+      "VITE_API_BASE_URL inválida. Configure uma URL HTTP(S) completa.",
+    );
   }
+  if (!["https:", "http:"].includes(url.protocol))
+    throw new Error("A API precisa usar HTTP(S).");
+  for (const [key, value] of Object.entries(query))
+    url.searchParams.set(key, value);
+  const r = await fetch(url, { signal: signal || AbortSignal.timeout(50000) });
+  if (!r.ok) throw new Error(`HTTP ${r.status} em ${path}`);
+  if (!r.headers.get("content-type")?.includes("application/json"))
+    throw new Error(`Resposta não JSON em ${path}`);
+  const data = await r.json();
+  if (
+    path === "/api/results" &&
+    (!Array.isArray(data.candidatos) ||
+      ![
+        "unavailable",
+        "official-tse",
+        "independent-tse-derived",
+        "bu-partial",
+      ].includes(data.sourceKind))
+  )
+    throw new Error("Contrato inválido em /api/results");
+  if (path === "/api/results" && data.scope && data.scope !== query.scope)
+    throw new Error("A resposta da API pertence a outra localidade.");
+  return data;
 }
-
-async function refreshPanel() {
-  if (state.refreshInFlight) {
-    state.pendingRefresh = true;
+function voteBar(payload, compact = false) {
+  const c = comparison(payload);
+  return `<div class="vote-track ${c.valid ? "" : "unavailable"}" role="img" aria-label="${c.valid ? `Flávio ${pct(c.flavio.pct)}; Lula ${pct(c.lula.pct)}` : "Percentuais indisponíveis"}"><i class="blue" style="width:${c.valid ? c.flavio.pct : 0}%"></i><i class="red" style="width:${c.valid ? c.lula.pct : 0}%"></i></div>${compact ? "" : `<div class="bar-legend"><span>FLÁVIO BOLSONARO · ${e(pct(c.flavio.pct))}</span><span>${e(pct(c.lula.pct))} · LULA</span></div>`}`;
+}
+function renderCandidate(name, party, number, c, color) {
+  return `<article class="candidate candidate--${color}"><div class="candidate-info"><p class="candidate-kicker"><b>${number}</b> ${party} <span>•</span> PRESIDENTE</p><h2>${name}</h2><p class="candidate__pct" aria-label="${e(pct(c.pct))}">${c.pct === null ? "—" : e(pct(c.pct).slice(0, -1))}${c.pct === null ? "" : "<small>%</small>"}</p><p class="candidate__votes">${e(int(c.votes))} <span>votos</span></p><div class="candidate-progress" aria-hidden="true"><i style="width:${c.pct ?? 0}%"></i></div></div><div class="portrait-frame"><img class="portrait-photo" src="${PORTRAITS[color]}" alt="Retrato ${color === "blue" ? "TSE, 2026, de Flávio Bolsonaro" : "oficial de Lula, Ricardo Stuckert/PR, 2023"}" width="${color === "blue" ? 411 : 960}" height="${color === "blue" ? 546 : 1229}" decoding="async"><span class="portrait-fallback">Retrato indisponível</span></div></article>`;
+}
+function renderResult(result) {
+  state.result = result;
+  const c = comparison(result),
+    pr = progress(result),
+    valid = result.sourceKind !== "unavailable";
+  $("app").dataset.gradient = c.valid ? "live" : "neutral";
+  $("app").style.setProperty("--split", `${c.split ?? 50}%`);
+  $("heroTotals").innerHTML =
+    renderCandidate("Flávio Bolsonaro", "PL", "22", c.flavio, "blue") +
+    renderCandidate("Lula", "PT", "13", c.lula, "red");
+  $("heroBar").innerHTML = voteBar(result);
+  $("heroDifference").innerHTML =
+    c.diff === null
+      ? "Diferença não disponível"
+      : c.diff === 0
+        ? "Empate em votos"
+        : `<strong>${e(int(c.diff))} votos</strong> de diferença · ${c.leader === "blue" ? "Flávio" : "Lula"} à frente`;
+  $("heroSource").innerHTML = result.sourceUrl
+    ? safeLink(result.sourceUrl, sourceKind(result))
+    : e(sourceKind(result));
+  $("heroUpdate").textContent =
+    `Atualização da fonte · ${date(result.updatedAt)} · Brasília`;
+  $("resultStatus").textContent = statusLabel(result);
+  $("connection").dataset.status = valid ? "online" : "error";
+  $("connection").innerHTML =
+    `<i></i>${valid ? "API conectada" : API_BASE_URL ? "Sem dados" : "API não configurada"}`;
+  $("notice").textContent =
+    result.consolidationWarning ||
+    (!c.valid
+      ? "Percentuais não informados pela fonte. Gradiente neutro; nenhum valor foi estimado."
+      : "");
+  $("cardApuracao").innerHTML =
+    `<h2>URNAS / SEÇÕES APURADAS</h2><p class="summary-number">${e(pct(pr))}</p><div class="progress-track"><i style="width:${pr ?? 0}%"></i></div><div class="summary-meta"><span>${e(int(result.secoesApuradas))} de ${e(int(result.secoesTotais))} seções</span><span>${e(statusLabel(result))}</span></div><p class="summary-note">${e(providerName(result.provider))} · ${e(date(result.updatedAt, true))}</p>`;
+  $("sourceMeta").innerHTML =
+    `<dl class="source-kv"><div><dt>Localidade</dt><dd>${e(scopeLabel())}</dd></div><div><dt>Tipo</dt><dd>${e(sourceKind(result))}</dd></div><div><dt>Provedor</dt><dd>${e(providerName(result.provider))}</dd></div><div><dt>Fonte às</dt><dd>${e(date(result.updatedAt))}</dd></div><div><dt>Coleta às</dt><dd>${e(date(result.retrievedAt))}</dd></div><div><dt>Consolidação</dt><dd>${e(statusLabel(result))}. Sem projeção de vitória.</dd></div></dl><div class="source-url">${safeLink(result.sourceUrl)}</div>`;
+  const diagnostics = Array.isArray(result.diagnostics)
+    ? result.diagnostics
+    : [];
+  $("diagnostics").innerHTML = diagnostics.length
+    ? diagnostics
+        .map(
+          (d) =>
+            `<p class="diagnostic"><strong>${e(providerName(d.provider))}</strong>: ${e(d.message)}<br>${safeLink(d.sourceUrl)}</p>`,
+        )
+        .join("")
+    : `<p class="diagnostic">${e(result.consolidationWarning || "Nenhuma falha reportada nesta consulta.")}</p>`;
+  renderUpdates(result);
+}
+function renderUpdates(result) {
+  if (result?.sourceKind !== "unavailable" && result?.updatedAt) {
+    const key = [
+      state.scope,
+      result.provider,
+      result.updatedAt,
+      JSON.stringify(result.candidatos),
+    ].join("|");
+    if (!state.updates.some((u) => u.key === key)) {
+      state.updates.unshift({ key, scope: scopeLabel(), result });
+      state.updates = state.updates.slice(0, 12);
+    }
+  }
+  $("updates").innerHTML = state.updates.length
+    ? state.updates
+        .map(
+          (u) =>
+            `<li class="${comparison(u.result).leader}"><time>${e(date(u.result.updatedAt, true))} · Brasília</time><strong>${e(u.scope)} · ${e(pct(progress(u.result)))} apurado</strong><small>${e(providerName(u.result.provider))} · ${e(statusLabel(u.result))}</small></li>`,
+        )
+        .join("")
+    : "<li><strong>Aguardando atualizações da fonte</strong><small>Somente mudanças reais são registradas.</small></li>";
+}
+const labelPositions = {
+  ac: [42.7, 183.7],
+  am: [111.6, 122.2],
+  ap: [264.5, 54.7],
+  ba: [387.3, 221.7],
+  ce: [412.6, 133.1],
+  go: [292.5, 264.5],
+  ma: [344.7, 132.7],
+  mg: [351.9, 293.5],
+  ms: [229.9, 315.9],
+  mt: [217.1, 227.4],
+  pa: [251.2, 119.7],
+  pe: [432.0, 171.9],
+  pi: [372.4, 160.6],
+  pr: [268.6, 367.6],
+  ro: [133.9, 202.9],
+  rr: [151.2, 47.0],
+  rs: [248.2, 428.5],
+  sc: [282.1, 398.9],
+  sp: [303.2, 339.2],
+  to: [308.0, 193.8],
+};
+function initMap() {
+  // Projected paths use the same affine lon/lat transform as the source geometry.
+  $("brazilMap").innerHTML =
+    BRAZIL_MAP.map(
+      (s) =>
+        `<path d="${s.d}" class="map-state" data-uf="${s.uf}" role="button" tabindex="0" aria-label="Selecionar ${e(s.name)}" aria-pressed="false"><title>${e(s.name)} · Sem dados</title></path>`,
+    ).join("") +
+    Object.entries(labelPositions)
+      .map(
+        ([uf, [x, y]]) =>
+          `<text class="map-label" x="${x}" y="${y}" aria-hidden="true">${uf.toUpperCase()}</text>`,
+      )
+      .join("");
+  $("brazilMap").addEventListener("click", (event) => {
+    const uf = event.target.closest("[data-uf]")?.dataset.uf;
+    if (uf) selectScope("estados", uf);
+  });
+  $("brazilMap").addEventListener("keydown", (event) => {
+    if (["Enter", " "].includes(event.key) && event.target.dataset.uf) {
+      event.preventDefault();
+      selectScope("estados", event.target.dataset.uf);
+    }
+  });
+}
+function renderMap() {
+  for (const node of $("brazilMap").querySelectorAll("[data-uf]")) {
+    const s = STATES.find((s) => s.uf === node.dataset.uf),
+      p = state.snapshots.get(s.uf),
+      c = comparison(p);
+    const selected = state.mainScope === "estados" && state.uf === s.uf;
+    node.classList.toggle("is-selected", selected);
+    node.setAttribute("aria-pressed", String(selected));
+    const intensity = c.valid
+      ? Math.min(1, Math.abs(c.flavio.pct - c.lula.pct) / 35)
+      : 0.35;
+    node.style.fill =
+      c.leader === "unknown"
+        ? "#29374a"
+        : c.leader === "tie"
+          ? "#8f805f"
+          : c.leader === "blue"
+            ? `color-mix(in srgb, #3b83ee ${30 + intensity * 70}%, #1d2b41)`
+            : `color-mix(in srgb, #f45b76 ${30 + intensity * 70}%, #2a2436)`;
+    const label = `${s.name} · ${c.leader === "unknown" ? "Sem dados" : c.leader === "tie" ? "Empate em votos" : `${c.leader === "blue" ? "Flávio" : "Lula"} na frente · ${providerName(p.provider)}`}`;
+    node.setAttribute("aria-label", `Selecionar ${label}`);
+    node.querySelector("title").textContent = label;
+  }
+  const p = state.snapshots.get(state.uf),
+    c = comparison(p);
+  $("mapDetail").innerHTML =
+    `<strong>${e(STATES.find((s) => s.uf === state.uf)?.name)}</strong><span>${state.mainScope === "estados" ? "Selecionado" : "Em destaque"}</span><p class="value">${e(pct(c.flavio.pct))} Flávio</p><p class="red-text">${e(pct(c.lula.pct))} Lula</p><p>${e(int(c.diff))} votos de diferença</p><p>${e(p ? providerName(p.provider) : "Sem dados")}</p><p>${e(date(p?.updatedAt))}</p>`;
+}
+function renderRegions() {
+  $("regionRows").innerHTML = regionGroups(state.snapshots)
+    .map(
+      (region) =>
+        `<section class="region-row"><div class="region-heading"><h3>${e(region.name)}</h3><span>${region.groups.length ? region.groups.reduce((n, g) => n + g.states, 0) : "—"}/${region.total} UFs</span></div>${
+          region.groups.length
+            ? region.groups
+                .map((g) => {
+                  const payload = {
+                    candidatos: [
+                      {
+                        candidato: "Flávio",
+                        percentual: g.flavioPct,
+                        votos: g.flavio,
+                      },
+                      {
+                        candidato: "Lula",
+                        percentual: g.lulaPct,
+                        votos: g.lula,
+                      },
+                    ],
+                  };
+                  return `<div class="region-values"><span>${e(pct(g.flavioPct))}</span><span class="red-text">${e(pct(g.lulaPct))}</span></div>${voteBar(payload, true)}<p class="region-note">F ${e(int(g.flavio))} · L ${e(int(g.lula))} votos · Δ ${e(int(Math.abs(g.flavio - g.lula)))}</p><p class="region-note">${e(providerName(g.provider))} · ${g.states}/${region.total} UFs${g.states < region.total ? " · Cobertura incompleta" : ""} · ${g.statuses.every((s) => s === "totalized") ? "Totalização finalizada" : g.statuses.some((s) => s === "partial") ? "Apuração parcial" : "Aguardando apuração"} · ${g.times.length ? e(date(g.times.slice().sort()[0])) : "Horário não informado"}</p>`;
+                })
+                .join("")
+            : `<div class="region-values"><span>—</span><span class="red-text">—</span></div><div class="vote-track unavailable"></div><p class="region-note">Dados indisponíveis · nenhuma UF com totais válidos</p>`
+        }</section>`,
+    )
+    .join("");
+}
+const FEATURED = ["AU", "NZ", "JP", "US", "PT", "GB", "DE", "FR"];
+function visibleLocations() {
+  const type = state.tab === "cidade" ? "city" : "country";
+  const list = state.locations.filter((l) => l.tipo === type);
+  const selected = list.filter((l) => locationScope(l) === state.exterior);
+  return [
+    ...selected,
+    ...list
+      .filter((l) => !selected.includes(l))
+      .sort((a, b) => {
+        const ia = FEATURED.indexOf(a.countryCode),
+          ib = FEATURED.indexOf(b.countryCode);
+        return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
+      }),
+  ].slice(0, 9);
+}
+function renderSourceComparison() {
+  $("exteriorSources").innerHTML = state.sourceComparisons.length
+    ? '<p class="footnote">Exterior · fontes independentes, sem somar totalizações</p>' +
+      state.sourceComparisons
+        .map(
+          (p) =>
+            `<button type="button" class="source-chip" data-exterior-provider="${e(p.provider)}" title="${e(p.consolidationWarning || statusLabel(p))}"><strong>${e(providerName(p.provider))}</strong><span>${e(pct(progress(p)))} apurado · ${e(statusLabel(p))}</span><small>Fonte ${e(date(p.updatedAt, true))} · coleta ${e(date(p.retrievedAt, true))}</small></button>`,
+        )
+        .join("")
+    : state.sourcesError
+      ? `<p class="footnote">Comparação de fontes: ${e(state.sourcesError)}</p>`
+      : "";
+}
+function renderExterior() {
+  const general = state.tab === "geral";
+  const list = general
+    ? [{ nome: "Exterior · geral", scope: "exterior-geral", countryCode: "ZZ" }]
+    : visibleLocations().map((l) => ({ ...l, scope: locationScope(l) }));
+  renderSourceComparison();
+  $("exteriorCount").textContent = state.locations.length
+    ? `${state.locations.length} locais`
+    : "ZZ";
+  $("exteriorContent").setAttribute("aria-labelledby", `tab-${state.tab}`);
+  $("exteriorContent").innerHTML = list.length
+    ? list
+        .map((l) => {
+          const p = state.exteriorResults.get(l.scope);
+          if (general && (!p || p.sourceKind === "unavailable"))
+            return `<div class="empty-state"><span class="empty-symbol" aria-hidden="true">◎</span><h3>Exterior sem totalização disponível</h3><p>${e(p?.consolidationWarning || "Aguardando uma resposta válida da fonte. Países e cidades aparecem somente quando retornados pela API.")}</p></div>`;
+          const c = comparison(p);
+          return `<button type="button" class="exterior-row" data-exterior-scope="${e(l.scope)}" aria-label="Selecionar ${e(l.nome)}"><span class="exterior-name"><span class="country-code">${e(l.countryCode || "LOC")}</span>${e(l.nome)} <span aria-hidden="true">↗</span></span><span class="exterior-values"><span>Flávio ${e(pct(c.flavio.pct))} · ${e(int(c.flavio.votes))}</span><span>Lula ${e(pct(c.lula.pct))} · ${e(int(c.lula.votes))}</span></span>${voteBar(p, true)}<span class="exterior-meta">Δ ${e(int(c.diff))} votos · ${e(pct(progress(p)))} apurado · ${e(int(p?.secoesApuradas))}/${e(int(p?.secoesTotais))} seções</span><span class="exterior-meta">${e(sourceKind(p))} · ${e(providerName(p?.provider))} · ${e(date(p?.updatedAt))}</span>${p?.consolidationWarning ? `<span class="exterior-meta">${e(p.consolidationWarning)}</span>` : ""}</button>`;
+        })
+        .join("")
+    : `<div class="empty-state"><span class="empty-symbol" aria-hidden="true">◎</span><h3>Nenhum ${state.tab === "pais" ? "país" : "município"} disponível</h3><p>${e(state.locationsError || "A fonte ainda não retornou locais verificáveis para esta aba. Nenhuma localidade foi criada pelo painel.")}</p></div>`;
+}
+let chartPoints = [];
+function renderHistory(history) {
+  const points = historyPoints(history?.points);
+  chartPoints = points;
+  const min = points[0]?.at || Date.now() - 3600000,
+    max = Math.max(points.at(-1)?.at || Date.now(), min + 1000);
+  const x = (t) => 42 + ((t - min) / (max - min)) * 620,
+    y = (v) => 180 - v * 1.6;
+  const grid = [0, 25, 50, 75, 100]
+    .map(
+      (v) =>
+        `<line class="chart-grid" x1="42" y1="${y(v)}" x2="662" y2="${y(v)}"/><text class="chart-axis" x="5" y="${y(v) + 4}">${v}%</text>`,
+    )
+    .join("");
+  const hasValues = points.some((p) => p.flavio !== null || p.lula !== null);
+  $("historyChart").innerHTML =
+    grid +
+    [0, 0.5, 1]
+      .map(
+        (r) =>
+          `<text class="chart-axis" x="${42 + r * 620}" y="208" text-anchor="${r === 0 ? "start" : r === 1 ? "end" : "middle"}">${e(date(new Date(min + (max - min) * r), true).slice(0, 5))}</text>`,
+      )
+      .join("") +
+    (hasValues
+      ? ["flavio", "lula"]
+          .map(
+            (key, i) =>
+              `<path class="chart-line ${i ? "red" : "blue"}" data-series="${key}" d="${linePath(points, key, x, y)}"/>${points.map((p, index) => (p[key] === null ? "" : `<circle class="chart-point" cx="${x(p.at)}" cy="${y(p[key])}" r="3" fill="${i ? "#ff657e" : "#5d9eff"}"/>`)).join("")}`,
+          )
+          .join("") +
+        points
+          .map(
+            (p, index) =>
+              `<circle class="chart-hit" cx="${x(p.at)}" cy="${y(p.flavio ?? p.lula ?? 50)}" r="12" tabindex="0" data-point="${index}" aria-label="${e(date(new Date(p.at)))}: Flávio ${e(pct(p.flavio))}; Lula ${e(pct(p.lula))}"><title>${e(date(new Date(p.at)))} · Flávio ${e(pct(p.flavio))} · Lula ${e(pct(p.lula))}</title></circle>`,
+          )
+          .join("")
+      : '<text class="chart-empty" x="352" y="94" text-anchor="middle">Sem histórico disponível</text><text class="chart-empty-note" x="352" y="115" text-anchor="middle">Os pontos aparecerão quando a fonte publicar uma série.</text>');
+  $("historySource").textContent = history?.provider
+    ? providerName(history.provider)
+    : "Fonte sem série disponível";
+  $("historyNote").textContent = history?.error
+    ? `Histórico indisponível: ${history.error}`
+    : history?.diagnostics?.length
+      ? history.diagnostics.map((d) => d.message).join(" · ")
+      : "Lacunas permanecem vazias. Nenhum valor é estimado.";
+  $("chartTooltip").hidden = true;
+}
+function tooltip(event) {
+  const node = event.target.closest("[data-point]");
+  if (!node) {
+    $("chartTooltip").hidden = true;
     return;
   }
-
+  const p = chartPoints[Number(node.dataset.point)];
+  $("chartTooltip").textContent =
+    `${date(new Date(p.at))} · Flávio ${pct(p.flavio)} · Lula ${pct(p.lula)}`;
+  $("chartTooltip").hidden = false;
+}
+function syncControls() {
+  $("scopeLabel").textContent = scopeLabel();
+  $("stateFilterWrap").hidden = state.mainScope !== "estados";
+  $("exteriorFilterWrap").hidden = state.mainScope !== "exterior";
+  $("stateSelect").value = state.uf;
+  $("exteriorSelect").value = state.exterior;
+  for (const b of document.querySelectorAll("[data-main-scope]")) {
+    const active = b.dataset.mainScope === state.mainScope;
+    b.classList.toggle("is-active", active);
+    b.setAttribute("aria-pressed", String(active));
+  }
+  renderMap();
+}
+async function loadCountryCities(code) {
+  try {
+    const data = await getJSON("/api/locations", { country: code });
+    if (!Array.isArray(data.locations))
+      throw new Error("Lista de cidades inválida.");
+    const entries = data.locations.filter(
+      (l) =>
+        l.tipo === "city" &&
+        typeof l.id === "string" &&
+        typeof l.nome === "string",
+    );
+    const existing = new Set(state.locations.map(locationScope));
+    state.locations.push(
+      ...entries.filter((l) => !existing.has(locationScope(l))),
+    );
+    $("exteriorSelect").innerHTML =
+      '<option value="exterior-geral">Exterior · geral</option>' +
+      state.locations
+        .map(
+          (l) => `<option value="${e(locationScope(l))}">${e(l.nome)}</option>`,
+        )
+        .join("");
+    $("exteriorSelect").value = state.exterior;
+    renderExterior();
+  } catch (error) {
+    state.locationsError = `Cidades: ${error.message}`;
+  }
+}
+function selectScope(main, value) {
+  state.mainScope = main;
+  if (main === "estados") state.uf = value || state.uf;
+  if (main === "exterior") state.exterior = value || state.exterior;
+  state.scope =
+    main === "brasil"
+      ? "brasil"
+      : main === "estados"
+        ? `estado:${state.uf}`
+        : state.exterior;
+  if (main === "exterior" && API_BASE_URL) {
+    const code = state.exterior.match(/^exterior-pais:([a-z]{2})$/)?.[1];
+    if (code) loadCountryCities(code);
+  }
+  revision++;
+  controller?.abort();
+  syncControls();
+  renderResult(unavailable("Consultando a localidade selecionada…"));
+  renderHistory(null);
+  refresh();
+}
+async function refresh() {
+  if (refreshing) {
+    refreshAgain = true;
+    return;
+  }
   if (!API_BASE_URL) {
-    renderUnavailable('API indisponível no GitHub Pages: defina VITE_API_BASE_URL apontando para o backend/proxy externo.');
+    renderResult(
+      unavailable(
+        "API indisponível no GitHub Pages: defina VITE_API_BASE_URL apontando para o backend/proxy externo.",
+      ),
+    );
     return;
   }
-
-  state.refreshInFlight = true;
-  if (activeAbortController) activeAbortController.abort();
-  activeAbortController = new AbortController();
-
+  refreshing = true;
+  controller = new AbortController();
+  const current = revision,
+    scope = state.scope,
+    provider = state.provider;
   try {
-    const [result, history] = await Promise.all([
-      getJSON('/api/results', {
-        scope: state.scopeRaw,
-        provider: state.provider
-      }, activeAbortController.signal),
-      fetchHistory(activeAbortController.signal)
+    const [result, history] = await Promise.allSettled([
+      getJSON("/api/results", { scope, provider }, controller.signal),
+      state.mode === "complete"
+        ? getJSON(
+            "/api/history",
+            { scope, provider, window: state.window },
+            controller.signal,
+          )
+        : Promise.resolve(null),
     ]);
-
-    const { flavio, lula } = inferCandidates(result);
-
-    computeGradient(flavio.pct, lula.pct);
-    renderSource(result);
-    renderHero(result, flavio, lula);
-    renderCardApuracao(result);
-    renderCardCandidatos(flavio, lula);
-    renderCardDiferenca(flavio, lula);
-    renderExteriorCard(result);
-    renderHistory(history);
-    appendUpdate('Atualização', `${getScopeLabel()} · ${result.providerLabel || result.provider || 'fonte'}`);
-    renderUpdatesCard();
-
-    if (state.mode === 'complete') {
-      await updateStateSnapshots(activeAbortController.signal);
-      drawMap();
-      renderCardRegioes();
-    }
-  } catch (error) {
-    appendUpdate('Erro', error.message || 'Falha desconhecida');
-    renderUnavailable(`Erro específico de atualização: ${error.message || 'falha desconhecida'}`);
+    if (current !== revision) return;
+    if (result.status === "fulfilled") {
+      renderResult(result.value);
+      if (state.mainScope === "estados") {
+        state.snapshots.set(state.uf, result.value);
+        renderMap();
+      }
+      if (state.mainScope === "exterior") {
+        state.exteriorResults.set(scope, result.value);
+        renderExterior();
+      }
+    } else if (result.reason.name !== "AbortError")
+      renderResult(
+        unavailable(`Falha ao consultar API: ${result.reason.message}`),
+      );
+    if (history.status === "fulfilled") {
+      state.history = history.value;
+      renderHistory(history.value);
+    } else if (history.reason.name !== "AbortError")
+      renderHistory({ error: history.reason.message });
+    if (state.mode === "complete") refreshDetails();
   } finally {
-    state.refreshInFlight = false;
-    if (state.pendingRefresh) {
-      state.pendingRefresh = false;
-      queueRefresh();
+    refreshing = false;
+    if (refreshAgain) {
+      refreshAgain = false;
+      refresh();
     }
   }
 }
-
-function queueRefresh() {
-  refreshPanel();
-}
-
-function syncScopeControls() {
-  MAIN_SCOPE_BUTTONS.forEach((button) => {
-    button.classList.toggle('is-active', button.dataset.mainScope === state.mainScope);
-  });
-
-  els.stateFilterWrap.classList.toggle('is-hidden', state.mainScope !== 'estados');
-  els.exteriorFilterWrap.classList.toggle('is-hidden', state.mainScope !== 'exterior');
-
-  if (state.mainScope === 'brasil') {
-    state.scopeRaw = 'brasil';
-  }
-  if (state.mainScope === 'estados') {
-    state.scopeRaw = `estado:${state.selectedState}`;
-  }
-  if (state.mainScope === 'exterior') {
-    state.scopeRaw = state.selectedExterior;
-  }
-}
-
-function seedStateSelect() {
-  els.stateSelect.innerHTML = UF_META
-    .map((item) => `<option value="${item.uf}">${escapeHtml(item.nome)} (${item.uf.toUpperCase()})</option>`)
-    .join('');
-  els.stateSelect.value = state.selectedState;
-}
-
-async function loadExteriorLocations() {
-  if (!API_BASE_URL) return;
-
+async function refreshDetails() {
+  if (snapshotBusy || !API_BASE_URL) return;
+  snapshotBusy = true;
+  snapshotController = new AbortController();
+  const signal = snapshotController.signal,
+    provider = state.provider;
+  const fetchResult = async (scope) => {
+    try {
+      return await getJSON("/api/results", { scope, provider }, signal);
+    } catch (error) {
+      if (error.name === "AbortError") throw error;
+      return unavailable(error.message);
+    }
+  };
   try {
-    const payload = await getJSON('/api/locations', {}, undefined);
-    const raw = Array.isArray(payload.locations) ? payload.locations : [];
-
-    const normalized = [{ label: 'Geral (ZZ)', value: 'exterior-geral', type: 'general' }];
-    for (const item of raw) {
-      const type = item.tipo === 'country' ? 'country' : item.tipo === 'city' ? 'city' : 'other';
-      const value = type === 'country' ? `exterior-pais:${item.id}` : `exterior-cidade:${item.id}`;
-      const prefix = type === 'country' ? '🌐' : type === 'city' ? '📍' : '•';
-      normalized.push({ label: `${prefix} ${item.nome}`, value, type });
+    if (Date.now() - state.lastLocations > 60000) {
+      try {
+        const data = await getJSON("/api/locations", {}, signal);
+        if (!Array.isArray(data.locations))
+          throw new Error("Contrato de locais inválido");
+        state.locations = data.locations.filter(
+          (l) =>
+            ["country", "city"].includes(l.tipo) &&
+            typeof l.id === "string" &&
+            typeof l.nome === "string",
+        );
+        state.locationsError = data.error || null;
+        $("exteriorSelect").innerHTML =
+          '<option value="exterior-geral">Exterior · geral</option>' +
+          state.locations
+            .map(
+              (l) =>
+                `<option value="${e(locationScope(l))}">${e(l.nome)}</option>`,
+            )
+            .join("");
+        $("exteriorSelect").value = state.exterior;
+      } catch (error) {
+        if (error.name === "AbortError") throw error;
+        state.locationsError = `Falha na lista do exterior: ${error.message}`;
+      }
+      state.lastLocations = Date.now();
     }
-
-    state.exteriorLocations = normalized;
-    els.exteriorSelect.innerHTML = normalized
-      .map((item) => `<option value="${escapeHtml(item.value)}">${escapeHtml(item.label)}</option>`)
-      .join('');
-    els.exteriorSelect.value = state.selectedExterior;
+    if (Date.now() - state.lastSourceComparison > 30000) {
+      try {
+        const data = await getJSON(
+          "/api/sources",
+          { scope: "exterior-geral" },
+          signal,
+        );
+        if (Array.isArray(data.sources)) state.sourceComparisons = data.sources;
+        else state.sourcesError = "Contrato de comparação de fontes inválido.";
+      } catch (error) {
+        if (error.name === "AbortError") throw error;
+        state.sourcesError = error.message;
+      }
+      state.lastSourceComparison = Date.now();
+      renderSourceComparison();
+    }
+    if (Date.now() - state.lastExterior > 30000) {
+      const featured = state.locations.filter(
+        (l) => l.tipo === "country" && FEATURED.includes(l.countryCode),
+      );
+      const scopes = [
+        ...new Set([
+          "exterior-geral",
+          state.exterior,
+          ...featured.map(locationScope),
+          ...visibleLocations().map(locationScope),
+        ]),
+      ];
+      for (let i = 0; i < scopes.length; i += 3) {
+        await Promise.all(
+          scopes.slice(i, i + 3).map(async (scope) => {
+            const data = await fetchResult(scope);
+            if (provider === state.provider)
+              state.exteriorResults.set(scope, data);
+          }),
+        );
+        renderExterior();
+      }
+      state.lastExterior = Date.now();
+    }
+    renderExterior();
+    if (Date.now() - state.lastSnapshot > 60000) {
+      for (let i = 0; i < STATES.length; i += 3) {
+        await Promise.all(
+          STATES.slice(i, i + 3).map(async (s) => {
+            const data = await fetchResult(`estado:${s.uf}`);
+            if (provider === state.provider) state.snapshots.set(s.uf, data);
+          }),
+        );
+        renderMap();
+        renderRegions();
+      }
+      state.lastSnapshot = Date.now();
+    }
   } catch (error) {
-    state.exteriorLocations = [{ label: 'Geral (ZZ)', value: 'exterior-geral', type: 'general' }];
-    appendUpdate('Aviso', `Falha ao carregar lista do exterior: ${error.message || 'indisponível'}`);
-    renderUpdatesCard();
+    if (error.name !== "AbortError") {
+      $("mapDetail").textContent = `Consulta interrompida: ${error.message}`;
+    }
+  } finally {
+    snapshotBusy = false;
   }
 }
-
-function wireEvents() {
-  MAIN_SCOPE_BUTTONS.forEach((button) => {
-    button.addEventListener('click', () => {
-      state.mainScope = button.dataset.mainScope;
-      syncScopeControls();
-      queueRefresh();
-    });
+$("stateSelect").innerHTML = STATES.map(
+  (s) =>
+    `<option value="${s.uf}">${e(s.name)} · ${s.uf.toUpperCase()}</option>`,
+).join("");
+for (const b of document.querySelectorAll("[data-main-scope]"))
+  b.addEventListener("click", () => selectScope(b.dataset.mainScope));
+for (const b of document.querySelectorAll("[data-mode]"))
+  b.addEventListener("click", () => {
+    state.mode = b.dataset.mode;
+    $("app").classList.toggle("mode-simple", state.mode === "simple");
+    for (const button of document.querySelectorAll("[data-mode]")) {
+      const active = button.dataset.mode === state.mode;
+      button.classList.toggle("is-active", active);
+      button.setAttribute("aria-pressed", String(active));
+    }
+    if (state.mode === "complete") refresh();
+    else snapshotController?.abort();
   });
-
-  EXTERIOR_TAB_BUTTONS.forEach((tab) => {
-    tab.addEventListener('click', () => {
-      EXTERIOR_TAB_BUTTONS.forEach((node) => node.classList.remove('is-active'));
-      tab.classList.add('is-active');
-      state.exteriorTab = tab.dataset.exteriorTab;
-      renderExteriorCard({ sourceKind: 'unavailable' });
-    });
-  });
-
-  els.providerSelect.addEventListener('change', () => {
-    state.provider = els.providerSelect.value;
-    state.lastStateSnapshotAt = 0;
-    queueRefresh();
-  });
-
-  els.modeSelect.addEventListener('change', () => {
-    state.mode = els.modeSelect.value;
-    els.app.classList.toggle('mode-simple', state.mode === 'simple');
-    els.app.classList.toggle('mode-complete', state.mode === 'complete');
-    queueRefresh();
-  });
-
-  els.windowSelect.addEventListener('change', () => {
-    state.window = els.windowSelect.value;
-    queueRefresh();
-  });
-
-  els.stateSelect.addEventListener('change', () => {
-    state.selectedState = els.stateSelect.value;
-    state.mainScope = 'estados';
-    syncScopeControls();
-    queueRefresh();
-  });
-
-  els.exteriorSelect.addEventListener('change', () => {
-    state.selectedExterior = els.exteriorSelect.value;
-    state.mainScope = 'exterior';
-    syncScopeControls();
-    queueRefresh();
+$("settingsBtn").addEventListener("click", () => {
+  $("settingsPanel").hidden = !$("settingsPanel").hidden;
+  $("settingsBtn").setAttribute(
+    "aria-expanded",
+    String(!$("settingsPanel").hidden),
+  );
+});
+$("refreshBtn").addEventListener("click", refresh);
+$("stateSelect").addEventListener("change", (event) =>
+  selectScope("estados", event.target.value),
+);
+$("exteriorSelect").addEventListener("change", (event) =>
+  selectScope("exterior", event.target.value),
+);
+$("providerSelect").addEventListener("change", () => {
+  state.provider = $("providerSelect").value;
+  revision++;
+  controller?.abort();
+  snapshotController?.abort();
+  state.snapshots.clear();
+  state.exteriorResults.clear();
+  state.lastSnapshot = state.lastExterior = 0;
+  renderMap();
+  renderRegions();
+  renderExterior();
+  renderResult(unavailable("Consultando o provedor selecionado…"));
+  refresh();
+});
+$("windowSelect").addEventListener("change", () => {
+  state.window = $("windowSelect").value;
+  revision++;
+  controller?.abort();
+  refresh();
+});
+const tabs = [...document.querySelectorAll("[data-exterior-tab]")];
+function activateTab(tab) {
+  state.tab = tab.dataset.exteriorTab;
+  for (const t of tabs) {
+    const active = t === tab;
+    t.classList.toggle("is-active", active);
+    t.setAttribute("aria-selected", String(active));
+    t.tabIndex = active ? 0 : -1;
+  }
+  renderExterior();
+  state.lastExterior = 0;
+  refreshDetails();
+}
+for (const tab of tabs) {
+  tab.addEventListener("click", () => activateTab(tab));
+  tab.addEventListener("keydown", (event) => {
+    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+    event.preventDefault();
+    const index =
+      event.key === "Home"
+        ? 0
+        : event.key === "End"
+          ? tabs.length - 1
+          : (tabs.indexOf(tab) +
+              (event.key === "ArrowRight" ? 1 : -1) +
+              tabs.length) %
+            tabs.length;
+    tabs[index].focus();
+    activateTab(tabs[index]);
   });
 }
-
-function startPolling() {
-  if (!API_BASE_URL) return;
-  if (pollTimer) clearInterval(pollTimer);
-  pollTimer = setInterval(() => {
-    queueRefresh();
-  }, POLL_INTERVAL_MS);
-}
-
-seedStateSelect();
-wireEvents();
-syncScopeControls();
-renderUpdatesCard();
-await loadExteriorLocations();
-queueRefresh();
-startPolling();
+$("exteriorSources").addEventListener("click", (event) => {
+  const provider = event.target.closest("[data-exterior-provider]")?.dataset
+    .exteriorProvider;
+  if (!provider) return;
+  state.provider = provider;
+  $("providerSelect").value = provider;
+  state.lastSnapshot = state.lastExterior = 0;
+  state.snapshots.clear();
+  state.exteriorResults.clear();
+  selectScope("exterior", "exterior-geral");
+});
+$("exteriorContent").addEventListener("click", (event) => {
+  const scope = event.target.closest("[data-exterior-scope]")?.dataset
+    .exteriorScope;
+  if (scope) selectScope("exterior", scope);
+});
+$("historyChart").addEventListener("pointerover", tooltip);
+$("historyChart").addEventListener("focusin", tooltip);
+$("historyChart").addEventListener("pointerleave", () => {
+  $("chartTooltip").hidden = true;
+});
+$("historyChart").addEventListener("focusout", () => {
+  $("chartTooltip").hidden = true;
+});
+$("heroTotals").addEventListener(
+  "error",
+  (event) => {
+    if (event.target.matches(".portrait-photo"))
+      event.target.parentElement.classList.add("is-unavailable");
+  },
+  true,
+);
+$("imageCredits").href = new URL("./images/credits.html", import.meta.url).href;
+initMap();
+syncControls();
+renderRegions();
+renderExterior();
+renderHistory(null);
+renderResult(unavailable("Conectando à API…"));
+refresh();
+setInterval(() => {
+  if (!document.hidden) refresh();
+}, 3000);
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) refresh();
+  else {
+    controller?.abort();
+    snapshotController?.abort();
+  }
+});
