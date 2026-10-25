@@ -217,6 +217,7 @@
               <span id="heroDifference">Diferença não disponível</span
               ><span id="heroSource">Fonte não disponível</span>
             </div>
+            <p id="raceOverview" class="race-overview" role="status">Visão geral indisponível até receber votos válidos.</p>
           </div>
         </div>
       </section>
@@ -331,6 +332,15 @@
             ></div>
           </article>
         </section>
+        <section class="panel world-map-card" id="cardMapaMundo" aria-labelledby="worldMapTitle">
+          <div class="card-heading">
+            <div><p class="eyebrow">APURAÇÃO FORA DO BRASIL</p><h2 id="worldMapTitle">Mapa mundial do exterior</h2></div>
+            <span class="small-tag" id="worldMapCount">Países com dados: 0</span>
+          </div>
+          <div class="world-map-wrap"><svg id="worldMap" viewBox="0 0 960 460" role="group" aria-label="Mapa mundial; países sem resultados publicados aparecem sem cor"></svg></div>
+          <div class="map-legend"><span><i class="dot blue"></i><span id="worldBlueLegend">Candidato à frente</span></span><span><i class="dot red"></i><span id="worldRedLegend">Outro candidato</span></span><span><i class="dot unknown"></i>Sem dados</span></div>
+          <p class="footnote">Só países retornados pela fonte podem ser selecionados. A forma do mapa vem do conjunto Natural Earth 1:110m, em domínio público; cores e dados dependem da API de resultados.</p>
+        </section>
         <section class="lower-grid">
           <article class="panel history-card" id="cardHistorico">
             <div class="card-heading">
@@ -348,8 +358,8 @@
               >
             </div>
             <div class="chart-legend">
-              <span><i class="dot blue"></i>Flávio Bolsonaro</span
-              ><span><i class="dot red"></i>Lula</span
+              <span><i class="dot blue"></i><b id="historyLegendFlavio">Flávio Bolsonaro</b></span
+              ><span><i class="dot red"></i><b id="historyLegendLula">Lula</b></span
               ><span id="historySource"></span>
             </div>
             <div class="chart-wrap">
@@ -451,6 +461,10 @@
         ><small>Este aviso fecha automaticamente.</small>
       </div>
     </section>
+    <dialog id="candidateDialog" class="candidate-dialog" aria-labelledby="candidateDialogName">
+      <button type="button" class="dialog-close" aria-label="Fechar perfil">×</button>
+      <div id="candidateDialogContent"></div>
+    </dialog>
     <script type="module" src="./app.js"></script>
   </body>
 </html>

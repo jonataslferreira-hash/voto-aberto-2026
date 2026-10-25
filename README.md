@@ -50,6 +50,10 @@ Em **Configurações → URL do backend (opcional)**, salve uma URL HTTPS públi
 
 Os percentuais exibidos são referentes a todos os votos válidos, não recalculados para fingir que dois candidatos do primeiro turno somam 100%. O espaço restante da barra representa os demais candidatos; o fundo distribui as duas cores pela razão da comparação selecionada. Histórico de outra dupla/ano/turno não é reaproveitado.
 
+Ao abrir um candidato na lista, o perfil mostra os votos e o percentual da localidade atual, posição nacional quando calculável e resultados por UF que estejam presentes no snapshot da mesma eleição. UFs ausentes ficam sem preenchimento. O painel resume quem tem mais votos em cada região; “possibilidade de virada” permanece indeterminada se a fonte não publicar uma estimativa verificável de votos restantes. A série temporal não é inventada: o histórico disponível hoje cobre apenas a comparação nacional de Flávio e Lula em 2026/2; 2022 e 2026/1 exibem claramente que a fonte não arquivou uma série temporal para esses recortes.
+
+O mapa mundial foi construído localmente a partir de [Natural Earth, escala 1:110m](https://www.naturalearthdata.com/downloads/110m-cultural-vectors/110m-admin-0-countries/), conjunto cartográfico em domínio público. Ele colore somente países com resultado válido retornado pela API; a lista de locais publicada pela fonte é o que habilita a seleção no mapa. Países sem dados continuam neutros, sem percentuais ou placares estimados.
+
 ### Procedência do acervo de 2022
 
 O endpoint de divulgação de 2022 testado atualmente retorna 404 e o CDN do acervo oficial foi bloqueado pelo proxy desta nuvem. Portanto os registros de 2022 são identificados como **acervo histórico independente derivado do TSE**, nunca como consulta direta atual ao TSE.
