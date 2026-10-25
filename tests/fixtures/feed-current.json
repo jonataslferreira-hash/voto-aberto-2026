@@ -1,0 +1,50 @@
+{
+  "versao": 1,
+  "gerado": 1792883496000,
+  "presidente": {
+    "br": {
+      "secoes": 499248,
+      "totalizadas": 0,
+      "eleitorado": 158745502,
+      "apurado": 0,
+      "comparecimento": 0,
+      "brancos": 0,
+      "nulos": 0,
+      "votos": {
+        "13": 0,
+        "22": 0
+      },
+      "situacao": "apurando"
+    },
+    "uf": {
+      "SP": {
+        "secoes": 103656,
+        "totalizadas": 0,
+        "eleitorado": 34123591,
+        "apurado": 0,
+        "comparecimento": 0,
+        "brancos": 0,
+        "nulos": 0,
+        "votos": {
+          "13": 0,
+          "22": 0
+        },
+        "situacao": "apurando"
+      },
+      "ZZ": {
+        "secoes": 1351,
+        "totalizadas": 0,
+        "eleitorado": 916683,
+        "apurado": 0,
+        "comparecimento": 0,
+        "brancos": 0,
+        "nulos": 0,
+        "votos": {
+          "13": 0,
+          "22": 0
+        },
+        "situacao": "apurando"
+      }
+    }
+  }
+}

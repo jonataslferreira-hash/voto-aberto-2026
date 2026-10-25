@@ -1,0 +1,79 @@
+{
+  "schemaVersion": 1,
+  "url": "https://placardovoto.com/resultados/2026/2/presidente/br/",
+  "retrievedAt": "2026-10-25T13:59:37.287Z",
+  "freshness": {
+    "status": "source-check-pending",
+    "sourceUpdatedAt": "2026-10-24T22:19:13.000Z",
+    "lastCheckedAt": "2026-10-25T04:12:21.138Z",
+    "warning": "Último registro disponível. A conferência na fonte está pendente; não interpretar como tempo real."
+  },
+  "classification": "election-result",
+  "source": {
+    "url": "https://resultados.tse.jus.br/oficial/ele2026/6258/dados/br/br-c0001-e006258-u.jws",
+    "label": "Assinatura verificada na coleta",
+    "signature": "verified"
+  },
+  "percentageBasis": {
+    "description": "Percentuais de candidaturas publicados pelo TSE sobre os votos a concorrentes: incluem os válidos e os anulados, inclusive sub judice. Brancos e nulos ficam fora dessa base.",
+    "code": "competing",
+    "denominator": 0
+  },
+  "notice": null,
+  "result": {
+    "year": 2026,
+    "office": "presidente",
+    "uf": "br",
+    "city": null,
+    "name": "Brasil",
+    "turn": 2,
+    "election": "6258",
+    "updatedAt": 1792880353000,
+    "generatedAt": 1792880353000,
+    "totalizedAt": null,
+    "checkedAt": 1792901541138,
+    "finished": false,
+    "progress": 0,
+    "counted": 0,
+    "sections": 499248,
+    "validVotes": 0,
+    "candidatePercentVotes": 0,
+    "percentBasis": "competing",
+    "blank": 0,
+    "nullVotes": 0,
+    "totalVotes": 0,
+    "electorate": 158745502,
+    "turnout": 0,
+    "abstentions": 0,
+    "version": "3943321",
+    "countingStatus": "not-started",
+    "candidates": [
+      {
+        "position": null,
+        "id": "280002551544",
+        "number": "22",
+        "name": "Flavio Bolsonaro",
+        "fullName": "Flavio Nantes Bolsonaro",
+        "party": "PL",
+        "votes": 0,
+        "percent": 0,
+        "valid": false,
+        "disposition": "",
+        "status": ""
+      },
+      {
+        "position": null,
+        "id": "280002542548",
+        "number": "13",
+        "name": "Lula",
+        "fullName": "Luiz Inácio Lula da Silva",
+        "party": "PT",
+        "votes": 0,
+        "percent": 0,
+        "valid": false,
+        "disposition": "",
+        "status": ""
+      }
+    ]
+  }
+}
