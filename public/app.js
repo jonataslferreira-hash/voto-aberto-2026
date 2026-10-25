@@ -3,6 +3,7 @@ import { createEventTracker, confirmedWinner } from "./election-events.js";
 import { createEventDisplay } from "./event-display.js";
 import { electionFor, electionKey } from "./elections.js";
 import { BRAZIL_MAP } from "./brazil-map.js";
+import { WORLD_MAP } from "./world-map.js";
 import {
   STATES,
   setComparisonNumbers,
@@ -156,6 +157,69 @@ const state = {
   lastSourceComparison: 0,
   sourceComparisons: [],
 };
+const MAX_LOCAL_HISTORY_POINTS = 720;
+function numberForCandidate(candidate) {
+  if (candidate?.numero != null) return String(candidate.numero);
+  const name = candidate?.candidato || "";
+  if (/fl[aá]vio|jair|bolsonaro/i.test(name)) return "22";
+  if (/\blula\b/i.test(name)) return "13";
+  return null;
+}
+function observationKey(result = state.result) {
+  return result
+    ? `voto-history:${state.year}:${state.turn}:${encodeURIComponent(state.scope)}:${encodeURIComponent(result.provider || "unknown")}`
+    : null;
+}
+function readObservations(result = state.result) {
+  const key = observationKey(result);
+  if (!key) return [];
+  try {
+    const values = JSON.parse(localStorage.getItem(key) || "[]");
+    return Array.isArray(values)
+      ? values.filter((item) => Number.isFinite(Date.parse(item.at)) && item.values && typeof item.values === "object")
+      : [];
+  } catch (error) {
+    console.info("Histórico local não pôde ser lido.", error);
+    return [];
+  }
+}
+function saveHistoryObservation(result) {
+  if (
+    state.year !== 2026 ||
+    !["official-tse", "independent-tse-derived"].includes(result?.sourceKind) ||
+    !Array.isArray(result.candidatos)
+  )
+    return;
+  const hasCount =
+    (Number.isFinite(result.votosValidos) && result.votosValidos > 0) ||
+    result.candidatos.some((candidate) => Number.isFinite(candidate.votos) && candidate.votos > 0);
+  if (!hasCount) return;
+  const timestamp = result.updatedAt || result.retrievedAt;
+  const at = timestamp ? new Date(timestamp) : null;
+  if (!at || Number.isNaN(at.getTime())) return;
+  const values = Object.fromEntries(
+    result.candidatos
+      .map((candidate) => {
+        const number = numberForCandidate(candidate);
+        const value = candidate.percentual;
+        return number && Number.isFinite(value) && value >= 0 && value <= 100
+          ? [number, value]
+          : null;
+      })
+      .filter(Boolean),
+  );
+  if (!Object.keys(values).length) return;
+  const point = { at: at.toISOString(), values };
+  const current = readObservations(result);
+  const previous = current.at(-1);
+  if (previous?.at === point.at && JSON.stringify(previous.values) === JSON.stringify(point.values)) return;
+  current.push(point);
+  try {
+    localStorage.setItem(observationKey(result), JSON.stringify(current.slice(-MAX_LOCAL_HISTORY_POINTS)));
+  } catch (error) {
+    console.info("Este navegador não conseguiu guardar novas observações do histórico.", error);
+  }
+}
 let revision = 0,
   controller = null,
   refreshing = false,
@@ -311,9 +375,31 @@ function portraitFor(number, name) {
 }
 function renderCandidate(name, party, number, c, color) {
   const image = portraitFor(number, name);
-  const accent = candidateColor(number, state.year),
-    transparentPng = Boolean(image);
-  return `<article class="candidate candidate--${color}" data-watermark="${e(name)}" style="--candidate-accent:${accent}"><div class="candidate-info"><p class="candidate-kicker"><b>${e(number)}</b> ${e(party)} <span>•</span> PRESIDENTE</p><h2>${e(name)}</h2><p class="candidate__pct" aria-label="${e(pct(c.pct))}">${c.pct === null ? "—" : e(pct(c.pct).slice(0, -1))}${c.pct === null ? "" : "<small>%</small>"}</p><p class="candidate__votes">${e(int(c.votes))} <span>votos</span></p><div class="candidate-progress" aria-hidden="true"><i style="width:${c.pct ?? 0}%"></i></div></div><div class="portrait-frame ${image ? "" : "is-unavailable"} ${image && !transparentPng ? "is-photographic" : ""}"><img class="portrait-photo" ${image ? `src="${image}"` : ""} alt="${image ? `Retrato fotográfico de ${e(name)}` : ""}" width="${String(number) === "22" ? 411 : 540}" height="${String(number) === "22" ? 546 : 780}" decoding="async"><span class="portrait-fallback">Retrato indisponível</span></div></article>`;
+  const accent = candidateColor(number, state.year);
+  const countKey = `${state.year}-${state.turn}-${state.scope}-${number}`;
+  return `<article class="candidate candidate--${color}" data-candidate-number="${e(number)}" data-watermark="${e(name)}" style="--candidate-accent:${accent}"><div class="candidate-info"><p class="candidate-kicker"><b>${e(number)}</b> ${e(party)} <span>•</span> PRESIDENTE</p><h2>${e(name)}</h2><p class="candidate__pct" aria-label="${e(pct(c.pct))}">${c.pct === null ? "—" : `<span data-count-key="${e(countKey)}" data-count-target="${e(c.pct)}">${e(pct(c.pct).slice(0, -1))}</span><small>%</small>`}</p><p class="candidate__votes">${e(int(c.votes))} <span>votos</span></p><div class="candidate-progress" aria-hidden="true"><i style="width:${c.pct ?? 0}%"></i></div></div><div class="portrait-frame ${image ? "" : "is-unavailable"}"><img class="portrait-photo" ${image ? `src="${image}"` : ""} alt="${image ? `Retrato fotográfico de ${e(name)}` : ""}" width="540" height="780" decoding="async"><span class="portrait-fallback">Retrato indisponível</span></div></article>`;
+}
+
+const displayedPercents = new Map();
+function animatePercents() {
+  document.querySelectorAll("[data-count-key]").forEach((node) => {
+    const key = node.dataset.countKey, target = Number(node.dataset.countTarget);
+    const from = displayedPercents.get(key);
+    if (from === undefined || !Number.isFinite(target) || from === target) {
+      displayedPercents.set(key, target);
+      return;
+    }
+    const started = performance.now(), duration = 380;
+    const tick = (now) => {
+      const t = Math.min(1, (now - started) / duration);
+      const eased = 1 - (1 - t) ** 3;
+      const value = from + (target - from) * eased;
+      node.textContent = value.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      if (t < 1 && node.isConnected) requestAnimationFrame(tick);
+      else displayedPercents.set(key, target);
+    };
+    requestAnimationFrame(tick);
+  });
 }
 
 function renderResult(result) {
@@ -322,6 +408,7 @@ function renderResult(result) {
   $("liveUpdatesToggle").disabled = state.year !== 2026;
   $("liveUpdatesToggle").checked = state.year === 2026 && liveEnabled;
   state.result = result;
+  saveHistoryObservation(result);
   syncCandidateOptions(result);
   const c = comparison(result),
     pr = progress(result),
@@ -330,6 +417,8 @@ function renderResult(result) {
   $("app").style.setProperty("--split", `${c.split ?? 50}%`);
   $("app").style.setProperty("--left-color", candidateColor(state.pair[0], state.year));
   $("app").style.setProperty("--right-color", candidateColor(state.pair[1], state.year));
+  $("app").style.setProperty("--left-presence", `${c.valid ? c.split : 50}%`);
+  $("app").style.setProperty("--right-presence", `${c.valid ? 100 - c.split : 50}%`);
   $("heroColorField").dataset.valid = String(c.valid);
   $("heroColorBlue").style.width = `${c.split ?? 0}%`;
   $("heroColorRed").style.width = `${c.split === null ? 0 : 100 - c.split}%`;
@@ -358,6 +447,7 @@ function renderResult(result) {
       "blue",
     ) +
     renderCandidate(c.lula.name, c.lula.party, c.lula.number, c.lula, "red");
+  animatePercents();
   $("heroBar").innerHTML = voteBar(result);
   const legends = document.querySelectorAll(".map-legend>span");
   if (legends[0])
@@ -371,6 +461,13 @@ function renderResult(result) {
       : c.diff === 0
         ? "Empate em votos"
         : `<strong>${e(int(c.diff))} votos</strong> de diferença · ${e(c.leader === "blue" ? c.flavio.name : c.lula.name)} à frente`;
+  $("raceOverview").textContent = c.valid
+    ? `Visão geral: ${c.leader === "tie" ? "empate em votos entre os nomes comparados" : `${c.leader === "blue" ? c.flavio.name : c.lula.name} está à frente por ${int(c.diff)} votos`}. Possibilidade de virada: indeterminada; a fonte não informa quantos votos ainda podem ser contabilizados.`
+    : "Visão geral e possibilidade de virada indisponíveis: faltam percentuais válidos nesta localidade.";
+  $("raceOverview").style.setProperty("--race-accent", c.valid ? candidateColor(c.leader === "blue" ? c.flavio.number : c.leader === "red" ? c.lula.number : state.pair[0], state.year) : "#607087");
+  $("worldBlueLegend").textContent = c.flavio.name;
+  $("worldRedLegend").textContent = c.lula.name;
+  renderWorldMap();
   $("heroSource").innerHTML = result.sourceUrl
     ? safeLink(result.sourceUrl, sourceKind(result))
     : e(sourceKind(result));
@@ -540,7 +637,8 @@ function renderRegions() {
                       },
                     ],
                   };
-                  return `<div class="region-values"><span>${e(pct(g.flavioPct))}</span><span class="red-text">${e(pct(g.lulaPct))}</span></div>${voteBar(payload, true)}<p class="region-note">A ${e(int(g.flavio))} · B ${e(int(g.lula))} votos · Δ ${e(int(Math.abs(g.flavio - g.lula)))}</p><p class="region-note">${e(providerName(g.provider))} · ${g.states}/${region.total} UFs${g.states < region.total ? " · Cobertura incompleta" : ""} · ${g.statuses.every((s) => s === "totalized") ? "Totalização finalizada" : g.statuses.some((s) => s === "partial") ? "Apuração parcial" : "Aguardando apuração"} · ${g.times.length ? e(date(g.times.slice().sort()[0])) : "Horário não informado"}</p>`;
+                  const leading = g.flavio === g.lula ? "Empate nos votos comparados" : `Mais votos: ${g.flavio > g.lula ? candidates(state.result).flavio.name : candidates(state.result).lula.name}`;
+                  return `<div class="region-values"><span>${e(pct(g.flavioPct))}</span><span class="red-text">${e(pct(g.lulaPct))}</span></div>${voteBar(payload, true)}<p class="region-front">${e(leading)}</p><p class="region-note">${e(candidates(state.result).flavio.name)} ${e(int(g.flavio))} · ${e(candidates(state.result).lula.name)} ${e(int(g.lula))} votos · Δ ${e(int(Math.abs(g.flavio - g.lula)))}</p><p class="region-note">${e(providerName(g.provider))} · ${g.states}/${region.total} UFs${g.states < region.total ? " · Cobertura incompleta" : ""} · ${g.statuses.every((s) => s === "totalized") ? "Totalização finalizada" : g.statuses.some((s) => s === "partial") ? "Apuração parcial" : "Aguardando apuração"} · ${g.times.length ? e(date(g.times.slice().sort()[0])) : "Horário não informado"}</p>`;
                 })
                 .join("")
             : `<div class="region-values"><span>—</span><span class="red-text">—</span></div><div class="vote-track unavailable"></div><p class="region-note">Dados indisponíveis · nenhuma UF com totais válidos</p>`
@@ -605,19 +703,65 @@ function renderExterior() {
         .join("")
     : `<div class="empty-state"><span class="empty-symbol" aria-hidden="true">◎</span><h3>Nenhum ${state.tab === "pais" ? "país" : "município"} disponível</h3><p>${e(state.locationsError || "A fonte ainda não retornou locais verificáveis para esta aba. Nenhuma localidade foi criada pelo painel.")}</p></div>`;
 }
+function initWorldMap() {
+  $("worldMap").innerHTML = WORLD_MAP.map((country) => {
+    const available = state.locations.some((location) => location.tipo === "country" && (location.countryCode || location.id?.toUpperCase()) === country.code);
+    return `<path d="${country.d}" class="world-country ${available ? "has-results-source" : ""}" data-country-code="${country.code}" aria-label="${e(country.name)} · ${available ? "localidade publicada pela fonte" : "sem dados publicados"}" ${available ? 'role="button" tabindex="0"' : ""}><title>${e(country.name)} · ${available ? "dados disponíveis na fonte" : "sem dados"}</title></path>`;
+  }).join("");
+  renderWorldMap();
+}
+function renderWorldMap() {
+  if (!$("worldMap")) return;
+  for (const node of $("worldMap").querySelectorAll(".world-country")) {
+    const location = state.locations.find((entry) => entry.tipo === "country" && (entry.countryCode || entry.id?.toUpperCase()) === node.dataset.countryCode);
+    const result = location ? state.exteriorResults.get(locationScope(location)) : null;
+    const c = comparison(result);
+    node.classList.toggle("is-data", Boolean(result && result.sourceKind !== "unavailable"));
+    node.style.setProperty("--map-result", c.valid ? c.leader === "blue" ? candidateColor(c.flavio.number, state.year) : c.leader === "red" ? candidateColor(c.lula.number, state.year) : "#b99dff" : "#31435a");
+    node.setAttribute("aria-pressed", String(Boolean(location && locationScope(location) === state.exterior)));
+  }
+  $("worldMapCount").textContent = `Países com resultados: ${[...$("worldMap").querySelectorAll(".world-country.is-data")].length}`;
+}
+function chooseWorldCountry(event) {
+  const code = event.target.closest("[data-country-code]")?.dataset.countryCode;
+  const location = state.locations.find((entry) => entry.tipo === "country" && (entry.countryCode || entry.id?.toUpperCase()) === code);
+  if (location) selectScope("exterior", locationScope(location));
+}
 let chartPoints = [];
 function renderHistory(history) {
-  if (
-    state.year !== 2026 ||
-    state.turn !== 2 ||
-    state.pair.join(",") !== "22,13"
-  )
-    history = {
-      points: [],
-      error:
-        "Histórico desta comparação não disponível; nenhuma série de outra eleição foi reutilizada.",
-    };
-  const points = historyPoints(history?.points);
+  const selected = candidates(state.result);
+  const localPoints = state.year === 2026
+    ? readObservations().map((sample) => ({
+        at: Date.parse(sample.at),
+        left: Number.isFinite(sample.values[state.pair[0]]) ? sample.values[state.pair[0]] : null,
+        right: Number.isFinite(sample.values[state.pair[1]]) ? sample.values[state.pair[1]] : null,
+      }))
+    : [];
+  const remoteAllowed =
+    state.year === 2026 &&
+    state.turn === 2 &&
+    new Set(state.pair).size === 2 &&
+    state.pair.includes("22") &&
+    state.pair.includes("13");
+  const remotePoints = remoteAllowed
+    ? historyPoints(history?.points).map((point) => ({
+        at: point.at,
+        left: state.pair[0] === "22" ? point.flavio : point.lula,
+        right: state.pair[1] === "22" ? point.flavio : point.lula,
+      }))
+    : [];
+  const remoteFiltered = filterHistoryWindow(remotePoints, state.window);
+  const points = remoteFiltered.length
+    ? remoteFiltered
+    : filterHistoryWindow(localPoints, state.window);
+  const localSelected = !remoteFiltered.length && localPoints.length > 0;
+  const chartHistoryError =
+    state.year === 2022
+      ? "A série temporal de 2022 não foi arquivada. O painel mostra os totais finais do turno sem fingir que são uma sequência ao vivo."
+      : !points.length
+        ? history?.error ||
+          "O gráfico começa no primeiro resultado válido publicado após o fechamento de uma seção. Ainda não há ponto histórico disponível nesta sessão."
+        : null;
   chartPoints = points;
   const min = points[0]?.at || Date.now() - 3600000,
     max = Math.max(points.at(-1)?.at || Date.now(), min + 1000);
@@ -629,7 +773,11 @@ function renderHistory(history) {
         `<line class="chart-grid" x1="42" y1="${y(v)}" x2="662" y2="${y(v)}"/><text class="chart-axis" x="5" y="${y(v) + 4}">${v}%</text>`,
     )
     .join("");
-  const hasValues = points.some((p) => p.flavio !== null || p.lula !== null);
+  const hasValues = points.some((p) => p.left !== null || p.right !== null);
+  const series = [
+    { key: "left", candidate: selected.flavio, number: state.pair[0] },
+    { key: "right", candidate: selected.lula, number: state.pair[1] },
+  ].map((item) => ({ ...item, color: candidateColor(item.number, state.year) }));
   $("historyChart").innerHTML =
     grid +
     [0, 0.5, 1]
@@ -639,28 +787,44 @@ function renderHistory(history) {
       )
       .join("") +
     (hasValues
-      ? ["flavio", "lula"]
+      ? series
           .map(
-            (key, i) =>
-              `<path class="chart-line ${i ? "red" : "blue"}" data-series="${key}" d="${linePath(points, key, x, y)}"/>${points.map((p, index) => (p[key] === null ? "" : `<circle class="chart-point" cx="${x(p.at)}" cy="${y(p[key])}" r="3" fill="${i ? "#ff657e" : "#5d9eff"}"/>`)).join("")}`,
+            ({ key, candidate, color }) =>
+              `<path class="chart-line" style="--series-color:${color}" data-series="${key}" d="${linePath(points, key, x, y)}"/>${points.map((point) => (point[key] === null ? "" : `<circle class="chart-point" cx="${x(point.at)}" cy="${y(point[key])}" r="3" fill="${color}"/>`)).join("")}`,
           )
           .join("") +
         points
-          .map(
-            (p, index) =>
-              `<circle class="chart-hit" cx="${x(p.at)}" cy="${y(p.flavio ?? p.lula ?? 50)}" r="12" tabindex="0" data-point="${index}" aria-label="${e(date(new Date(p.at)))}: Flávio ${e(pct(p.flavio))}; Lula ${e(pct(p.lula))}"><title>${e(date(new Date(p.at)))} · Flávio ${e(pct(p.flavio))} · Lula ${e(pct(p.lula))}</title></circle>`,
-          )
+          .map((point, index) => {
+            const value = point.left ?? point.right;
+            return value === null
+              ? ""
+              : `<circle class="chart-hit" cx="${x(point.at)}" cy="${y(value)}" r="12" tabindex="0" data-point="${index}" aria-label="${e(date(new Date(point.at)))}: ${e(selected.flavio.name)} ${e(pct(point.left))}; ${e(selected.lula.name)} ${e(pct(point.right))}"><title>${e(date(new Date(point.at)))} · ${e(selected.flavio.name)} ${e(pct(point.left))} · ${e(selected.lula.name)} ${e(pct(point.right))}</title></circle>`;
+          })
           .join("")
-      : '<text class="chart-empty" x="352" y="94" text-anchor="middle">Sem histórico disponível</text><text class="chart-empty-note" x="352" y="115" text-anchor="middle">Os pontos aparecerão quando a fonte publicar uma série.</text>');
-  $("historySource").textContent = history?.provider
-    ? providerName(history.provider)
-    : "Fonte sem série disponível";
-  $("historyNote").textContent = history?.error
-    ? `Histórico indisponível: ${history.error}`
-    : history?.diagnostics?.length
-      ? history.diagnostics.map((d) => d.message).join(" · ")
-      : "Lacunas permanecem vazias. Nenhum valor é estimado.";
+      : `<text class="chart-empty" x="352" y="94" text-anchor="middle">${state.year === 2022 ? "Histórico temporal não arquivado" : "Aguardando a primeira atualização válida"}</text><text class="chart-empty-note" x="352" y="115" text-anchor="middle">${state.year === 2022 ? "Resultados finais disponíveis; sem série de evolução." : "O gráfico começará quando a fonte publicar votos e percentuais."}</text>`);
+  $("historyLegendFlavio").textContent = selected.flavio.name;
+  $("historyLegendLula").textContent = selected.lula.name;
+  $("historyLegendFlavio").parentElement.style.setProperty("--series-color", series[0].color);
+  $("historyLegendLula").parentElement.style.setProperty("--series-color", series[1].color);
+  $("historyLegendFlavio").parentElement.querySelector(".dot").style.backgroundColor = series[0].color;
+  $("historyLegendLula").parentElement.querySelector(".dot").style.backgroundColor = series[1].color;
+  $("historySource").textContent = remoteFiltered.length
+    ? providerName(history?.provider)
+    : localPoints.length
+    ? `${providerName(state.result?.provider)} · série observada neste navegador`
+      : "Fonte sem série disponível";
+  $("historyNote").textContent = localSelected && points.length
+    ? `Série desde o primeiro resultado válido observado neste navegador (${date(new Date(points[0].at))}). Se uma seção fechou antes desta sessão, só um histórico preservado pela fonte pode preencher esse período. Lacunas permanecem vazias.`
+    : chartHistoryError || (history?.diagnostics?.length
+      ? history.diagnostics.map((diagnostic) => diagnostic.message).join(" · ")
+      : "Lacunas permanecem vazias. Nenhum valor é estimado.");
   $("chartTooltip").hidden = true;
+}
+function filterHistoryWindow(points, windowKey) {
+  if (windowKey === "all") return points.slice().sort((a, b) => a.at - b.at);
+  const horizon = windowKey === "1h" ? 3600000 : 10800000;
+  const min = Date.now() - horizon;
+  return points.filter((point) => point.at >= min && point.at <= Date.now()).sort((a, b) => a.at - b.at);
 }
 function tooltip(event) {
   const node = event.target.closest("[data-point]");
@@ -669,8 +833,9 @@ function tooltip(event) {
     return;
   }
   const p = chartPoints[Number(node.dataset.point)];
+  const chartCandidates = candidates(state.result);
   $("chartTooltip").textContent =
-    `${date(new Date(p.at))} · Flávio ${pct(p.flavio)} · Lula ${pct(p.lula)}`;
+    `${date(new Date(p.at))} · ${chartCandidates.flavio.name} ${pct(p.left)} · ${chartCandidates.lula.name} ${pct(p.right)}`;
   $("chartTooltip").hidden = false;
 }
 function syncControls() {
@@ -725,6 +890,7 @@ function selectScope(main, value) {
       : main === "estados"
         ? `estado:${state.uf}`
         : state.exterior;
+  renderWorldMap();
   if (main === "exterior" && API_BASE_URL) {
     const code = state.exterior.match(/^exterior-pais:([a-z]{2})$/)?.[1];
     if (code) loadCountryCities(code);
@@ -815,6 +981,7 @@ async function refreshDetails() {
             typeof l.nome === "string",
         );
         state.locationsError = data.error || null;
+        initWorldMap();
         $("exteriorSelect").innerHTML =
           '<option value="exterior-geral">Exterior · geral</option>' +
           state.locations
@@ -866,8 +1033,10 @@ async function refreshDetails() {
         await Promise.all(
           scopes.slice(i, i + 3).map(async (scope) => {
             const data = await fetchResult(scope);
-            if (provider === state.provider && detailRevision === revision)
+            if (provider === state.provider && detailRevision === revision) {
               state.exteriorResults.set(scope, data);
+              renderWorldMap();
+            }
           }),
         );
         renderExterior();
@@ -942,7 +1111,7 @@ function syncCandidateOptions(result) {
         .map(
           (c, index) => {
             const portrait = portraitFor(c.numero, c.candidato);
-            return `<div class="candidate-rank-row"><b class="candidate-rank">${index + 1}º</b>${portrait ? `<img src="${portrait}" alt="Retrato de ${e(c.candidato)}" loading="lazy" width="32" height="42">` : `<span class="candidate-rank-placeholder" aria-label="Retrato indisponível">—</span>`}<strong>${e(c.candidato)}</strong><span>${e(c.partido || "")} ${e(c.numero || "")}</span><b style="color:${candidateColor(c.numero, state.year)}">${e(pct(c.percentual))}</b><span>${e(int(c.votos))} votos</span></div>`;
+            return `<button type="button" class="candidate-rank-row" data-candidate-profile="${e(c.numero)}" aria-label="Abrir perfil de ${e(c.candidato)}">${portrait ? `<img src="${portrait}" alt="" loading="lazy" width="32" height="42">` : `<span class="candidate-rank-placeholder" aria-label="Retrato indisponível">—</span>`}<b class="candidate-rank">${index + 1}º</b><strong>${e(c.candidato)}</strong><span>${e(c.partido || "")} · ${e(c.numero || "")}</span><b style="color:${candidateColor(c.numero, state.year)}">${e(pct(c.percentual))}</b><span>${e(int(c.votos))} votos</span></button>`;
           },
         )
         .join("") +
@@ -958,6 +1127,28 @@ function syncCandidateOptions(result) {
         ? "TSE ao vivo quando disponível · fonte a cada 60 s"
         : "Dados publicados do site");
 }
+function openCandidateProfile(number) {
+  const candidate = (state.result?.candidatos || []).find((c) => String(c.numero) === String(number));
+  if (!candidate) return;
+  const dialog = $("candidateDialog"), image = portraitFor(candidate.numero, candidate.candidato);
+  const accent = candidateColor(candidate.numero, state.year);
+  const orderedStates = [...state.snapshots.entries()].map(([uf, payload]) => {
+    const ufInfo = STATES.find((entry) => entry.uf === uf);
+    const entries = (payload?.candidatos || []).filter((item) => Number.isSafeInteger(item.votos) && item.votos >= 0);
+    const own = entries.find((item) => String(item.numero) === String(number));
+    const leader = entries.slice().sort((a, b) => b.votos - a.votos)[0];
+    return own && ufInfo ? { uf, name: ufInfo.name, item: own, leader, source: payload.provider } : null;
+  }).filter(Boolean).sort((a, b) => b.item.votos - a.item.votos);
+  const states = orderedStates.length
+    ? `<div class="candidate-state-grid">${orderedStates.map((entry) => {
+      const isLeader = String(entry.leader?.numero) === String(number);
+      return `<div class="candidate-state ${isLeader ? "is-leader" : ""}" style="--candidate-accent:${accent}" title="${e(entry.name)} · ${e(int(entry.item.votos))} votos"><b>${e(entry.uf.toUpperCase())}</b><span>${e(pct(entry.item.percentual))}</span><small>${e(int(entry.item.votos))} votos</small></div>`;
+    }).join("")}</div><p class="candidate-dialog-note">Estados destacados: ${orderedStates.filter((entry) => String(entry.leader?.numero) === String(number)).length} de ${orderedStates.length} com dados válidos. Dados ausentes não são estimados.</p>`
+    : `<div class="empty-state"><h3>Estados sem dados disponíveis</h3><p>Esta eleição ou fonte não publicou detalhamento estadual verificável para este candidato.</p></div>`;
+  const rank = (state.result?.candidatos || []).filter((item) => Number.isSafeInteger(item.votos)).sort((a,b) => b.votos - a.votos).findIndex((item) => String(item.numero) === String(number)) + 1;
+  $("candidateDialogContent").innerHTML = `<div class="candidate-profile-hero" style="--candidate-accent:${accent}">${image ? `<img src="${image}" alt="Retrato fotográfico de ${e(candidate.candidato)}">` : '<div class="profile-no-image">Retrato indisponível</div>'}<div><p class="eyebrow">PERFIL DO CANDIDATO · ${state.year} · ${state.turn}º TURNO</p><h2 id="candidateDialogName">${e(candidate.candidato)}</h2><p>${e(candidate.partido || "Partido não informado")} · número ${e(candidate.numero)}</p><strong class="candidate-profile-pct">${e(pct(candidate.percentual))}</strong><p class="candidate-profile-votes">${e(int(candidate.votos))} votos · ${rank > 0 ? `${rank}º lugar no Brasil` : "posição indisponível"}</p><p>${e(scopeLabel())} · ${e(providerName(state.result.provider))} · fonte às ${e(date(state.result.updatedAt))}</p></div></div><section class="candidate-profile-states"><div class="card-heading"><div><p class="eyebrow">DISTRIBUIÇÃO TERRITORIAL</p><h3>Resultados por estado</h3></div><span class="small-tag">${orderedStates.length}/27 UFs</span></div>${states}</section>`;
+  if (!dialog.open) dialog.showModal();
+}
 function changeElection() {
   resetEventContext();
   state.year = Number($("yearSelect").value);
@@ -971,6 +1162,7 @@ function changeElection() {
   state.exteriorResults.clear();
   state.sourceComparisons = [];
   state.locations = [];
+  initWorldMap();
   state.updates = [];
   state.lastSnapshot =
     state.lastExterior =
@@ -1149,6 +1341,21 @@ $("exteriorContent").addEventListener("click", (event) => {
     .exteriorScope;
   if (scope) selectScope("exterior", scope);
 });
+$("worldMap").addEventListener("click", chooseWorldCountry);
+$("worldMap").addEventListener("keydown", (event) => {
+  if (["Enter", " "].includes(event.key) && event.target.matches("[data-country-code]")) {
+    event.preventDefault();
+    chooseWorldCountry(event);
+  }
+});
+$("allCandidates").addEventListener("click", (event) => {
+  const number = event.target.closest("[data-candidate-profile]")?.dataset.candidateProfile;
+  if (number) openCandidateProfile(number);
+});
+$("candidateDialog").querySelector(".dialog-close").addEventListener("click", () => $("candidateDialog").close());
+$("candidateDialog").addEventListener("click", (event) => {
+  if (event.target === $("candidateDialog")) $("candidateDialog").close();
+});
 $("historyChart").addEventListener("pointerover", tooltip);
 $("historyChart").addEventListener("focusin", tooltip);
 $("historyChart").addEventListener("pointerleave", () => {
@@ -1194,6 +1401,7 @@ $("liveUpdatesToggle").addEventListener("change", () => {
 });
 $("imageCredits").href = new URL("./images/credits.html", import.meta.url).href;
 initMap();
+initWorldMap();
 syncControls();
 renderRegions();
 renderExterior();

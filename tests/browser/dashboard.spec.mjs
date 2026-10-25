@@ -26,13 +26,20 @@ const normalized = {
 };
 async function api(
   page,
-  { result = normalized, history = [], locations = [] } = {},
+  { result = normalized, history = [], locations = [], includeElection = true } = {},
 ) {
   await page.route("http://127.0.0.1:4199/**", async (route) => {
     const url = new URL(route.request().url());
     if (url.pathname === "/api/results")
       await route.fulfill({
-        json: { ...result, scope: url.searchParams.get("scope") },
+        json: {
+          ...result,
+          ...(includeElection ? {
+            year: Number(url.searchParams.get("year") || 2026),
+            turn: Number(url.searchParams.get("turn") || 2),
+          } : {}),
+          scope: url.searchParams.get("scope"),
+        },
       });
     else if (url.pathname === "/api/history")
       await route.fulfill({
@@ -231,7 +238,7 @@ test("sem histórico mantém gráfico vazio; lacunas separam segmentos e tooltip
   await api(page);
   await ready(page);
   await expect(page.locator("#historyChart")).toContainText(
-    "Sem histórico disponível",
+    "Aguardando a primeira atualização válida",
   );
   await page.unroute("http://127.0.0.1:4199/**");
   await api(page, {
@@ -242,10 +249,35 @@ test("sem histórico mantém gráfico vazio; lacunas separam segmentos e tooltip
     ],
   });
   await page.locator("#windowSelect").selectOption("all");
-  const path = page.locator('[data-series="flavio"]');
+  const path = page.locator('[data-series="left"]');
   await expect(path).toHaveAttribute("d", /^M[^L]+ M/);
   await page.locator('[data-point="0"]').focus();
   await expect(page.locator("#chartTooltip")).toContainText("55,00%");
+});
+test("histórico acompanha os dois candidatos escolhidos no primeiro turno", async ({ page }) => {
+  const firstTurn = {
+    ...normalized,
+    turn: 1,
+    updatedAt: "2026-10-25T20:00:00.000Z",
+    candidatos: [
+      { numero: "70", candidato: "Augusto Cury", votos: 120, percentual: 12 },
+      { numero: "13", candidato: "Lula", votos: 500, percentual: 50 },
+      { numero: "22", candidato: "Flávio Bolsonaro", votos: 380, percentual: 38 },
+    ],
+  };
+  await api(page, { result: firstTurn });
+  await ready(page);
+  await expect(page.locator("#connection")).toContainText("API conectada");
+  await page.locator("#turnSelect").selectOption("1");
+  await page.locator("#leftCandidateSelect").selectOption("70");
+  await page.locator("#rightCandidateSelect").selectOption("13");
+  await page.locator("#windowSelect").selectOption("all");
+  await expect(page.locator("#historyLegendFlavio")).toHaveText("Augusto Cury");
+  await expect(page.locator("#historyLegendLula")).toHaveText("Lula");
+  await expect(page.locator('[data-series="left"]')).toHaveAttribute("d", /^M/);
+  await expect(page.locator('[data-series="right"]')).toHaveAttribute("d", /^M/);
+  await expect(page.locator('[data-series="left"]')).toHaveAttribute("style", /#e7ad3e/i);
+  await expect(page.locator("#historyLegendFlavio").locator("xpath=..").locator(".dot")).toHaveCSS("background-color", "rgb(231, 173, 62)");
 });
 test("textos externos são escapados e fontes independentes não ganham selo de vitória", async ({
   page,
@@ -345,7 +377,7 @@ test("primeiro turno publicado lista todos os candidatos e permite comparação 
 }) => {
   await page.goto("http://127.0.0.1:4174/voto-aberto-2026/");
   await page.locator("#turnSelect").selectOption("1");
-  await expect(page.locator("#allCandidates .candidate-table>div")).toHaveCount(
+  await expect(page.locator("#allCandidates .candidate-table>.candidate-rank-row")).toHaveCount(
     12,
   );
   const options = await page
@@ -383,7 +415,7 @@ test("primeiro turno publicado lista todos os candidatos e permite comparação 
 test("lista de 2026 é ordenada por votos e apresenta retratos licenciados", async ({ page }) => {
   await page.goto("http://127.0.0.1:4174/voto-aberto-2026/");
   await page.locator("#turnSelect").selectOption("1");
-  const rows = page.locator("#allCandidates .candidate-table>div");
+  const rows = page.locator("#allCandidates .candidate-table>.candidate-rank-row");
   await expect(rows).toHaveCount(12);
   await expect(rows.nth(0)).toContainText("FLAVIO BOLSONARO");
   await expect(rows.nth(1)).toContainText("LULA");
@@ -391,6 +423,27 @@ test("lista de 2026 é ordenada por votos e apresenta retratos licenciados", asy
   await expect(rows.nth(3)).toContainText("RENAN SANTOS");
   await expect(rows.nth(5)).toContainText("ZEMA");
   await expect(rows.nth(2).locator("img")).toHaveAttribute("src", /2026-70-/);
+});
+test("lista abre o perfil detalhado do candidato", async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem("voto-api-url", "published"));
+  await page.goto("./");
+  await page.locator("#turnSelect").selectOption("1");
+  const row = page.locator("#allCandidates .candidate-rank-row").filter({ hasText: "ESCRITOR AUGUSTO CURY" });
+  await row.click();
+  await expect(page.locator("#candidateDialog")).toBeVisible();
+  await expect(page.locator("#candidateDialogName")).toHaveText("ESCRITOR AUGUSTO CURY");
+  await expect(page.locator("#candidateDialogContent")).toContainText("Resultados por estado");
+  await page.locator("#candidateDialog .dialog-close").click();
+  await expect(page.locator("#candidateDialog")).not.toBeVisible();
+});
+test("mapa mundial seleciona somente local publicado pela API", async ({ page }) => {
+  await api(page, {
+    locations: [{ id: "au", nome: "Austrália", tipo: "country", countryCode: "AU" }],
+  });
+  await page.goto("./");
+  await expect(page.locator("#worldMap path[data-country-code='AU']")).toHaveAttribute("role", "button");
+  await page.locator("#worldMap path[data-country-code='AU']").click();
+  await expect(page.locator("#scopeLabel")).toHaveText("Austrália");
 });
 test("exterior do segundo turno de 2026 mostra a espera oficial do TSE sem estimativas", async ({ page }) => {
   await page.goto("http://127.0.0.1:4174/voto-aberto-2026/");
@@ -408,7 +461,7 @@ test("2022 apresenta os dois turnos, candidatos corretos e origem histórica exp
   await expect(page.locator("#resultStatus")).toHaveText(
     "Totalização finalizada",
   );
-  await expect(page.locator("#allCandidates .candidate-table>div")).toHaveCount(
+  await expect(page.locator("#allCandidates .candidate-table>.candidate-rank-row")).toHaveCount(
     2,
   );
   await expect(page.locator(".candidate--blue .portrait-photo")).toHaveAttribute("src", /2022-22-jair.*\.png/);
@@ -429,12 +482,12 @@ test("2022 apresenta os dois turnos, candidatos corretos e origem histórica exp
   await expect(page.locator("#exteriorContent")).toContainText("Acervo histórico");
   await page.locator('[data-main-scope="brasil"]').click();
   await page.locator("#turnSelect").selectOption("1");
-  await expect(page.locator("#allCandidates .candidate-table>div")).toHaveCount(
+  await expect(page.locator("#allCandidates .candidate-table>.candidate-rank-row")).toHaveCount(
     11,
   );
   await expect(page.locator("#allCandidates .candidate-table img")).toHaveCount(11);
-  await expect(page.locator("#allCandidates .candidate-table>div").nth(0)).toContainText("LULA");
-  await expect(page.locator("#allCandidates .candidate-table>div").nth(1)).toContainText("JAIR BOLSONARO");
+  await expect(page.locator("#allCandidates .candidate-rank-row").nth(0)).toContainText("LULA");
+  await expect(page.locator("#allCandidates .candidate-rank-row").nth(1)).toContainText("JAIR BOLSONARO");
   await expect(
     page.locator(".candidate--blue .candidate__votes"),
   ).toContainText("51.072.345");
@@ -475,7 +528,7 @@ test("URL do backend pode ser configurada e removida no navegador", async ({
 test("backend antigo sem confirmação do turno não exibe eleição incorreta", async ({
   page,
 }) => {
-  await api(page);
+  await api(page, { includeElection: false });
   await ready(page);
   await page.locator("#turnSelect").selectOption("1");
   await expect(page.locator("#notice")).toContainText(

@@ -2843,6 +2843,253 @@ h1 {
   color: #a9bad1;
   font-size: 11px;
 }
+
+/* Warmer, brighter ambient color with a long blend zone avoids a hard split. */
+.dashboard:before {
+  background:
+    radial-gradient(ellipse 72vw 115vh at 0% 18%, color-mix(in srgb, var(--left-color) var(--left-presence, 50%), transparent), transparent 88%),
+    radial-gradient(ellipse 72vw 115vh at 100% 18%, color-mix(in srgb, var(--right-color) var(--right-presence, 50%), transparent), transparent 88%),
+    linear-gradient(180deg, #08101d80, #080d16b5);
+  background-blend-mode: screen, screen, multiply;
+  transition: background 900ms ease;
+}
+.dashboard[data-gradient="live"]:before {
+  background:
+    radial-gradient(ellipse 72vw 115vh at 0% 18%, color-mix(in srgb, var(--left-color) var(--left-presence, 50%), transparent), transparent 88%),
+    radial-gradient(ellipse 72vw 115vh at 100% 18%, color-mix(in srgb, var(--right-color) var(--right-presence, 50%), transparent), transparent 88%),
+    linear-gradient(180deg, #08101d80, #080d16b5);
+  background-blend-mode: screen, screen, multiply;
+}
+.hero-color-field:after {
+  background:
+    linear-gradient(90deg, transparent calc(var(--split) - 16%), color-mix(in srgb, var(--left-color) 22%, var(--right-color) 22%) var(--split), transparent calc(var(--split) + 16%)),
+    linear-gradient(180deg, #07111a40, #07101c05 45%, #0b112088);
+}
+.hero-color-field:before {
+  content: "";
+  position: absolute;
+  z-index: 1;
+  top: -7%;
+  bottom: -7%;
+  left: var(--split);
+  width: clamp(90px, 18vw, 250px);
+  transform: translateX(-50%);
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--left-color) 18%, var(--right-color) 18%), transparent);
+  filter: blur(24px);
+  opacity: .8;
+  transition: left 1s ease;
+}
+.hero-candidates .candidate--blue .portrait-photo {
+  transform: scaleX(-1);
+  transform-origin: center bottom;
+}
+.hero-candidates .candidate--red .portrait-photo {
+  transform: none;
+  object-position: center bottom;
+}
+.hero-candidates .portrait-frame {
+  width: clamp(145px, 17vw, 235px);
+  top: 0;
+}
+.hero-candidates .portrait-photo {
+  object-fit: contain;
+  object-position: center bottom;
+}
+#brazilMap {
+  max-height: 390px;
+}
+.race-overview {
+  margin: 8px auto 2px;
+  padding: 7px 12px;
+  width: fit-content;
+  max-width: min(100%, 620px);
+  border: 1px solid color-mix(in srgb, var(--race-accent, #607087) 35%, transparent);
+  border-radius: 999px;
+  color: #e4ebf8;
+  background: color-mix(in srgb, var(--race-accent, #607087) 12%, #07101dcc);
+  text-align: center;
+  font-size: 11px;
+}
+.world-map-card {
+  margin-top: 16px;
+  overflow: hidden;
+}
+.world-map-wrap {
+  width: 100%;
+  overflow: auto hidden;
+  border: 1px solid #94b7ed18;
+  border-radius: 12px;
+  background: radial-gradient(ellipse at 50% 50%, #18345a78, #07101bd1 75%);
+}
+#worldMap {
+  display: block;
+  width: 100%;
+  min-width: 650px;
+  height: auto;
+  max-height: 590px;
+}
+.world-country {
+  fill: #29394f;
+  stroke: #9fb9dc60;
+  stroke-width: .75;
+  stroke-linejoin: round;
+  transition: fill .45s, filter .2s, stroke .2s;
+}
+.world-country.has-results-source {
+  fill: #40536c;
+  cursor: pointer;
+  stroke: #c9dbf5a0;
+}
+.world-country.is-data {
+  fill: color-mix(in srgb, var(--map-result) 78%, #172438);
+  filter: drop-shadow(0 0 2px color-mix(in srgb, var(--map-result) 50%, transparent));
+}
+.world-country[aria-pressed="true"],
+.world-country.has-results-source:hover,
+.world-country.has-results-source:focus-visible {
+  stroke: #fff;
+  stroke-width: 1.8;
+  filter: brightness(1.35);
+  outline: none;
+}
+.candidate-rank-row {
+  width: 100%;
+  text-align: left;
+  grid-template-columns: 34px 24px minmax(0, 1fr) auto auto auto !important;
+  border-bottom: 1px solid #ffffff10;
+  border-radius: 6px;
+  padding: 5px 6px;
+  transition: background .18s, transform .18s;
+}
+.candidate-rank-row:hover {
+  background: #ffffff0a;
+  transform: translateX(2px);
+}
+.candidate-rank-row img {
+  object-fit: contain;
+  object-position: center bottom;
+  background: transparent;
+}
+.candidate-dialog {
+  width: min(980px, calc(100vw - 28px));
+  max-width: none;
+  max-height: min(92vh, 920px);
+  padding: 26px;
+  color: var(--text);
+  background: #0c1421f5;
+  border: 1px solid #9fb9dc45;
+  border-radius: 18px;
+  box-shadow: 0 30px 120px #000c;
+  overflow: auto;
+}
+.candidate-dialog::backdrop {
+  background: #030711d9;
+  backdrop-filter: blur(9px);
+}
+.dialog-close {
+  position: sticky;
+  z-index: 2;
+  top: 0;
+  float: right;
+  width: 42px;
+  height: 42px;
+  border: 1px solid #ffffff25;
+  border-radius: 50%;
+  background: #152238;
+  font-size: 28px;
+}
+.candidate-profile-hero {
+  display: grid;
+  grid-template-columns: minmax(170px, 270px) 1fr;
+  align-items: center;
+  gap: 22px;
+  padding: 12px 0 24px;
+  border-bottom: 1px solid #ffffff1c;
+}
+.candidate-profile-hero > img {
+  width: 100%;
+  height: 280px;
+  object-fit: contain;
+  object-position: center bottom;
+  filter: grayscale(1) contrast(1.08) drop-shadow(0 14px 24px #0008);
+}
+.candidate-profile-hero > div:not(.profile-no-image) {
+  min-width: 0;
+}
+.candidate-profile-hero h2 {
+  margin: 5px 0;
+  color: var(--candidate-accent);
+  font-size: clamp(28px, 5vw, 48px);
+  line-height: 1;
+}
+.candidate-profile-pct {
+  display: block;
+  margin-top: 16px;
+  color: var(--candidate-accent);
+  font-size: clamp(38px, 7vw, 68px);
+  line-height: 1.05;
+}
+.candidate-profile-votes {
+  margin: 5px 0 12px;
+  font-size: 20px;
+  font-weight: 700;
+}
+.candidate-profile-states {
+  padding-top: 22px;
+}
+.candidate-state-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
+  gap: 8px;
+  margin-top: 16px;
+}
+.candidate-state {
+  display: grid;
+  gap: 1px;
+  padding: 10px;
+  border: 1px solid #a4bbd51c;
+  border-radius: 9px;
+  background: #ffffff05;
+}
+.candidate-state.is-leader {
+  border-color: color-mix(in srgb, var(--candidate-accent) 48%, transparent);
+  background: color-mix(in srgb, var(--candidate-accent) 15%, #09111c);
+}
+.candidate-state > span { color: var(--candidate-accent); font-size: 18px; font-weight: 750; }
+.candidate-state small, .candidate-dialog-note { color: var(--muted); }
+.profile-no-image {
+  display: grid;
+  place-items: center;
+  height: 220px;
+  border: 1px dashed #91a5c133;
+  border-radius: 14px;
+  color: var(--muted);
+}
+.candidate-dialog-note { margin-top: 14px; font-size: 11px; }
+.region-front {
+  margin: 4px 0 1px;
+  color: #d7e5fb;
+  font-size: 10px;
+  font-weight: 700;
+}
+@media (max-width: 650px) {
+  .candidate-profile-hero {
+    grid-template-columns: 110px minmax(0, 1fr);
+    gap: 14px;
+  }
+  .candidate-profile-hero > img { height: 180px; }
+  .candidate-dialog { padding: 18px 14px; }
+  .candidate-rank-row {
+    grid-template-columns: 28px 20px minmax(0, 1fr) auto !important;
+    gap: 5px;
+  }
+  .candidate-rank-row > span:nth-last-child(1) { grid-column: 3 / -1; }
+  .candidate-rank-row > span:nth-last-child(2) { display: none; }
+  #brazilMap { max-height: 340px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}
 @media (max-width: 550px) {
   .candidate-table > .candidate-rank-row {
     grid-template-columns: 20px 28px minmax(0, 1fr) auto;
