@@ -1,0 +1,13 @@
+{
+  "data": {
+    "updated_at": "2026-10-25T12:02:00Z",
+    "votos_validos": 900,
+    "secoes_apuradas": 9,
+    "secoes_totais": 20,
+    "percentual_apurado": 45,
+    "candidatos": [
+      { "nome": "Flávio Bolsonaro", "votos": 470, "percentual": 52.22 },
+      { "nome": "Luiz Inácio Lula da Silva", "votos": 430, "percentual": 47.78 }
+    ]
+  }
+}

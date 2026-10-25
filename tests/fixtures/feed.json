@@ -1,0 +1,15 @@
+{
+  "updatedAt": "2026-10-25T12:01:00Z",
+  "votosValidos": 1200,
+  "secoesApuradas": 12,
+  "secoesTotais": 20,
+  "percentualApurado": 60,
+  "candidatos": [
+    { "nome": "Flávio Bolsonaro", "votos": 660, "percentual": 55 },
+    { "nome": "Luiz Inácio Lula da Silva", "votos": 540, "percentual": 45 }
+  ],
+  "locais": [
+    { "id": "au", "nome": "Austrália", "tipo": "country" },
+    { "id": "tokyo", "nome": "Tóquio", "tipo": "city" }
+  ]
+}
