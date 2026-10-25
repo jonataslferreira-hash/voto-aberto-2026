@@ -1,3 +1,6 @@
+import { getOfficialLive } from "./live-results.js";
+import { createEventTracker, confirmedWinner } from "./election-events.js";
+import { createEventDisplay } from "./event-display.js";
 import { electionFor, electionKey } from "./elections.js";
 import { BRAZIL_MAP } from "./brazil-map.js";
 import {
@@ -15,8 +18,8 @@ import {
   pct,
 } from "./dashboard-data.js";
 const PORTRAITS = {
-  blue: new URL("./images/flavio-2026.jpg", import.meta.url).href,
-  red: new URL("./images/lula-oficial-2023.jpg", import.meta.url).href,
+  blue: new URL("./images/flavio-cutout.png", import.meta.url).href,
+  red: new URL("./images/lula-cutout.png", import.meta.url).href,
 };
 const DEFAULT_API_BASE_URL =
   (import.meta.env.VITE_API_BASE_URL || "").trim().replace(/\/+$/, "") || null;
@@ -26,6 +29,15 @@ try {
   API_BASE_URL = saved === "published" ? null : saved || DEFAULT_API_BASE_URL;
 } catch (error) {
   console.info("Preferência de conexão não pôde ser lida.");
+}
+let liveEnabled = true;
+try {
+  liveEnabled =
+    localStorage.getItem("voto-live-enabled") === "off"
+      ? false
+      : localStorage.getItem("voto-api-url") !== "published";
+} catch (error) {
+  console.info("Preferência de atualização indisponível.");
 }
 let snapshotCache = null,
   snapshotAt = 0,
@@ -130,6 +142,7 @@ const providerName = (p) =>
     tse: "TSE oficial",
     "eleicoes-feed": "Feed independente",
     "placar-do-voto": "Placar do Voto",
+    "cnn-brasil": "CNN Brasil · painel baseado no TSE",
     "historical-archive": "Acervo histórico · TSE derivado",
   })[p] || "Indisponível";
 const sourceKind = (p) =>
@@ -185,7 +198,24 @@ function unavailable(message) {
 }
 async function getJSON(path, query = {}, signal) {
   query = { ...query, year: state.year, turn: state.turn };
-  if (!API_BASE_URL) return publishedJSON(path, query);
+  if (!API_BASE_URL) {
+    if (
+      path === "/api/results" &&
+      liveEnabled &&
+      Number(query.year) === 2026 &&
+      query.scope === state.scope &&
+      ["auto", "tse"].includes(query.provider)
+    ) {
+      try {
+        return await getOfficialLive(query, signal);
+      } catch (error) {
+        if (error.name === "AbortError") throw error;
+        const published = await publishedJSON(path, query);
+        return { ...published, liveUnavailable: error.message };
+      }
+    }
+    return publishedJSON(path, query);
+  }
   let url;
   try {
     url = new URL(API_BASE_URL + path);
@@ -226,18 +256,40 @@ async function getJSON(path, query = {}, signal) {
     throw new Error(
       "Backend não confirmou o ano/turno solicitado; resposta descartada.",
     );
-  return data;
+  return path === "/api/results"
+    ? {
+        ...data,
+        live:
+          liveEnabled &&
+          Number(query.year) === 2026 &&
+          data.sourceKind !== "unavailable",
+        transport: "backend",
+      }
+    : data;
 }
 function voteBar(payload, compact = false) {
   const c = comparison(payload);
   return `<div class="vote-track ${c.valid ? "" : "unavailable"}" role="img" aria-label="${c.valid ? `${e(c.flavio.name)} ${pct(c.flavio.pct)}; ${e(c.lula.name)} ${pct(c.lula.pct)}` : "Percentuais indisponíveis"}"><i class="blue" style="width:${c.valid ? c.flavio.pct : 0}%"></i><i class="red" style="width:${c.valid ? c.lula.pct : 0}%"></i></div>${compact ? "" : `<div class="bar-legend"><span>${e(c.flavio.name)} · ${e(pct(c.flavio.pct))}</span><span>${e(pct(c.lula.pct))} · ${e(c.lula.name)}</span></div>`}`;
 }
-function renderCandidate(name, party, number, c, color) {
-  return `<article class="candidate candidate--${color}"><div class="candidate-info"><p class="candidate-kicker"><b>${e(number)}</b> ${e(party)} <span>•</span> PRESIDENTE</p><h2>${e(name)}</h2><p class="candidate__pct" aria-label="${e(pct(c.pct))}">${c.pct === null ? "—" : e(pct(c.pct).slice(0, -1))}${c.pct === null ? "" : "<small>%</small>"}</p><p class="candidate__votes">${e(int(c.votes))} <span>votos</span></p><div class="candidate-progress" aria-hidden="true"><i style="width:${c.pct ?? 0}%"></i></div></div><div class="portrait-frame ${state.year !== 2026 || (color === "blue" ? !/fl[aá]vio/i.test(name) : !/lula/i.test(name)) ? "is-unavailable" : ""}"><img class="portrait-photo" ${state.year === 2026 && (color === "blue" ? /fl[aá]vio/i.test(name) : /lula/i.test(name)) ? `src="${PORTRAITS[color]}"` : ""} alt="Retrato ${color === "blue" ? "TSE, 2026, de Flávio Bolsonaro" : "oficial de Lula, Ricardo Stuckert/PR, 2023"}" width="${color === "blue" ? 411 : 960}" height="${color === "blue" ? 546 : 1229}" decoding="async"><span class="portrait-fallback">Retrato indisponível</span></div></article>`;
+function portraitFor(number, name) {
+  return state.year === 2026 &&
+    String(number) === "22" &&
+    /fl[aá]vio/i.test(name)
+    ? PORTRAITS.blue
+    : state.year === 2026 && String(number) === "13" && /lula/i.test(name)
+      ? PORTRAITS.red
+      : null;
 }
+function renderCandidate(name, party, number, c, color) {
+  const image = portraitFor(number, name);
+  return `<article class="candidate candidate--${color}"><div class="candidate-info"><p class="candidate-kicker"><b>${e(number)}</b> ${e(party)} <span>•</span> PRESIDENTE</p><h2>${e(name)}</h2><p class="candidate__pct" aria-label="${e(pct(c.pct))}">${c.pct === null ? "—" : e(pct(c.pct).slice(0, -1))}${c.pct === null ? "" : "<small>%</small>"}</p><p class="candidate__votes">${e(int(c.votes))} <span>votos</span></p><div class="candidate-progress" aria-hidden="true"><i style="width:${c.pct ?? 0}%"></i></div></div><div class="portrait-frame ${image ? "" : "is-unavailable"}"><img class="portrait-photo" ${image ? `src="${image}"` : ""} alt="Retrato fotográfico recortado de ${e(name)}" width="${String(number) === "22" ? 411 : 540}" height="${String(number) === "22" ? 546 : 780}" decoding="async"><span class="portrait-fallback">Retrato indisponível</span></div></article>`;
+}
+
 function renderResult(result) {
   result = { ...result, year: state.year, turn: state.turn };
   $("providerSelect").disabled = !API_BASE_URL;
+  $("liveUpdatesToggle").disabled = state.year !== 2026;
+  $("liveUpdatesToggle").checked = state.year === 2026 && liveEnabled;
   state.result = result;
   syncCandidateOptions(result);
   const c = comparison(result),
@@ -245,6 +297,23 @@ function renderResult(result) {
     valid = result.sourceKind !== "unavailable";
   $("app").dataset.gradient = c.valid ? "live" : "neutral";
   $("app").style.setProperty("--split", `${c.split ?? 50}%`);
+  $("heroColorField").dataset.valid = String(c.valid);
+  $("heroColorBlue").style.width = `${c.split ?? 0}%`;
+  $("heroColorRed").style.width = `${c.split === null ? 0 : 100 - c.split}%`;
+  $("heroColorField").setAttribute(
+    "aria-label",
+    c.valid
+      ? `Área azul ${c.split.toFixed(2)}%, área vermelha ${(100 - c.split).toFixed(2)}%; proporção entre os candidatos selecionados.`
+      : "Áreas de cor neutras: percentuais ausentes.",
+  );
+  const winner = confirmedWinner(result);
+  $("winnerConfirmation").hidden = !winner;
+  $("winnerConfirmation").textContent = winner
+    ? `${winner.candidato} · eleito, confirmado pelo TSE`
+    : "";
+  const event = eventTracker.observe(result, state.pair);
+  if (event) eventDisplay.show(event, scopeLabel());
+
   $("heroTotals").innerHTML =
     renderCandidate(
       c.flavio.name,
@@ -273,13 +342,28 @@ function renderResult(result) {
   $("heroUpdate").textContent =
     `Atualização da fonte · ${date(result.updatedAt)} · Brasília`;
   $("resultStatus").textContent = statusLabel(result);
+  $("liveStatus").textContent =
+    result.transport === "tse-direct"
+      ? `Consulta direta ao TSE; intervalo mínimo de 60 s. Fonte: ${date(result.updatedAt)}.`
+      : API_BASE_URL
+        ? liveEnabled
+          ? "Tela consulta o backend a cada 3 s; o cache da fonte pode ser maior."
+          : "Atualização automática pausada; use Atualizar agora para consultar."
+        : result.liveUnavailable
+          ? result.liveUnavailable + "; usando dados publicados."
+          : "Dados publicados não são uma conexão ao vivo.";
+
   $("connection").dataset.status = valid ? "online" : "error";
   $("connection").innerHTML =
-    `<i></i>${valid ? (API_BASE_URL ? "API conectada" : "Dados publicados") : "Sem dados"}`;
+    `<i></i>${valid ? (result.transport === "tse-direct" ? "TSE ao vivo" : API_BASE_URL ? "API conectada" : "Dados publicados") : "Sem dados"}`;
   $("notice").textContent =
-    (result.publishedAt
-      ? `Dados publicados; coleta ${date(result.retrievedAt)}. Atualização periódica, sem conexão ao vivo. `
-      : "") + (result.refreshError || result.consolidationWarning || "") ||
+    (result.liveUnavailable
+      ? `${result.liveUnavailable}. Exibindo a última coleta publicada. `
+      : "") +
+      (result.publishedAt
+        ? `Dados publicados; coleta ${date(result.retrievedAt)}. Atualização periódica, sem conexão ao vivo. `
+        : "") +
+      (result.refreshError || result.consolidationWarning || "") ||
     (!c.valid
       ? "Percentuais não informados pela fonte. Gradiente neutro; nenhum valor foi estimado."
       : "");
@@ -446,7 +530,7 @@ function visibleLocations() {
 }
 function renderSourceComparison() {
   $("exteriorSources").innerHTML = state.sourceComparisons.length
-    ? '<p class="footnote">Exterior · fontes independentes, sem somar totalizações</p>' +
+    ? '<p class="footnote">Exterior · fontes separadas, sem somar totalizações</p>' +
       state.sourceComparisons
         .map(
           (p) =>
@@ -589,6 +673,7 @@ async function loadCountryCities(code) {
   }
 }
 function selectScope(main, value) {
+  resetEventContext();
   state.mainScope = main;
   if (main === "estados") state.uf = value || state.uf;
   if (main === "exterior") state.exterior = value || state.exterior;
@@ -650,7 +735,8 @@ async function refresh() {
       renderHistory(history.value);
     } else if (history.reason.name !== "AbortError")
       renderHistory({ error: history.reason.message });
-    if (state.mode === "complete") refreshDetails();
+    if (state.mode === "complete" && (liveEnabled || !API_BASE_URL))
+      refreshDetails();
   } finally {
     refreshing = false;
     if (refreshAgain) {
@@ -702,7 +788,11 @@ async function refreshDetails() {
       }
       state.lastLocations = Date.now();
     }
-    if (Date.now() - state.lastSourceComparison > 30000) {
+    if (state.year !== 2026 || state.turn !== 2) {
+      state.sourceComparisons = [];
+      state.sourcesError = null;
+      renderSourceComparison();
+    } else if (Date.now() - state.lastSourceComparison > 30000) {
       try {
         const data = await getJSON(
           "/api/sources",
@@ -811,9 +901,14 @@ function syncCandidateOptions(result) {
   $("dataMode").textContent =
     electionFor(state.year, state.turn).label +
     " · " +
-    (API_BASE_URL ? "Backend configurado" : "Dados publicados do site");
+    (API_BASE_URL
+      ? "Backend configurado · tela a cada 3 s"
+      : liveEnabled && state.year === 2026
+        ? "TSE ao vivo quando disponível · fonte a cada 60 s"
+        : "Dados publicados do site");
 }
 function changeElection() {
+  resetEventContext();
   state.year = Number($("yearSelect").value);
   state.turn = Number($("turnSelect").value);
   state.pair = ["22", "13"];
@@ -848,6 +943,7 @@ for (const [id, index] of [
   ["rightCandidateSelect", 1],
 ])
   $(id).addEventListener("change", () => {
+    resetEventContext();
     const value = $(id).value;
     const other = 1 - index;
     if (state.pair[other] === value) state.pair[other] = state.pair[index];
@@ -876,6 +972,8 @@ function configureAPI(value) {
     }
     API_BASE_URL = value || null;
     if (!API_BASE_URL) {
+      liveEnabled = false;
+      $("liveUpdatesToggle").checked = false;
       state.provider = "auto";
       $("providerSelect").value = "auto";
     }
@@ -933,6 +1031,7 @@ $("exteriorSelect").addEventListener("change", (event) =>
   selectScope("exterior", event.target.value),
 );
 $("providerSelect").addEventListener("change", () => {
+  resetEventContext();
   state.provider = $("providerSelect").value;
   revision++;
   controller?.abort();
@@ -1015,6 +1114,33 @@ $("heroTotals").addEventListener(
   },
   true,
 );
+const eventTracker = createEventTracker();
+const eventDisplay = createEventDisplay({
+  overlay: $("electionEvent"),
+  soundButton: $("soundToggle"),
+  soundStatus: $("soundStatus"),
+  app: $("app"),
+});
+function resetEventContext() {
+  eventTracker.reset();
+  eventDisplay.dismiss();
+}
+$("liveUpdatesToggle").checked = liveEnabled;
+$("liveUpdatesToggle").addEventListener("change", () => {
+  liveEnabled = $("liveUpdatesToggle").checked;
+  try {
+    localStorage.setItem("voto-live-enabled", liveEnabled ? "on" : "off");
+    if (liveEnabled && localStorage.getItem("voto-api-url") === "published")
+      localStorage.removeItem("voto-api-url");
+  } catch (error) {
+    $("liveStatus").textContent = "Preferência aplicada somente nesta sessão.";
+  }
+  resetEventContext();
+  revision++;
+  controller?.abort();
+  snapshotController?.abort();
+  refresh();
+});
 $("imageCredits").href = new URL("./images/credits.html", import.meta.url).href;
 initMap();
 syncControls();
@@ -1024,10 +1150,10 @@ renderHistory(null);
 renderResult(unavailable("Conectando à API…"));
 refresh();
 setInterval(() => {
-  if (!document.hidden) refresh();
+  if (!document.hidden && (liveEnabled || !API_BASE_URL)) refresh();
 }, 3000);
 document.addEventListener("visibilitychange", () => {
-  if (!document.hidden) refresh();
+  if (!document.hidden && (liveEnabled || !API_BASE_URL)) refresh();
   else {
     controller?.abort();
     snapshotController?.abort();

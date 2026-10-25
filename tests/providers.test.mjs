@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { parseTseJson } from "../src/providers/tse.mjs";
 import { parseEleicoesNow } from "../src/providers/eleicoesFeed.mjs";
 import { parsePlacarJson } from "../src/providers/placarDoVoto.mjs";
+import { parseCnnAbroad } from "../src/providers/cnnBrasil.mjs";
 import { getNormalizedResult } from "../src/providers/index.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -25,7 +26,7 @@ function jsonResponse(body, status = 200, headers = {}) {
   });
 }
 
-test("parse dos 3 formatos normaliza candidatos e status", async () => {
+test("parse dos formatos TSE, feed e Placar normaliza candidatos e status", async () => {
   const [tse, feed, placar] = await Promise.all([
     fixture("tse"),
     fixture("feed"),
@@ -176,7 +177,7 @@ test("fallback preserva o diagnóstico de cada fonte que falhou", async () => {
     provider: "auto",
     fetchImpl: async () => jsonResponse({}, 404),
   });
-  assert.equal(result.diagnostics.length, 3);
+  assert.equal(result.diagnostics.length, 4);
   assert.match(result.consolidationWarning, /HTTP 404/);
   assert.equal(result.scope, "brasil");
 });
@@ -281,13 +282,49 @@ test("exterior compacto usa somente cidades publicadas do país e mantém metada
     /Cobertura incompleta/,
   );
 });
-test("comparação retorna três fontes separadas, sem criar quarta totalização", async () => {
+test("CNN normaliza somente o ZZ explicitamente publicado e mantém metadados ausentes", async () => {
+  const raw = await fixture("cnn-abroad");
+  const result = parseCnnAbroad(raw, "https://cnn.example/zz.json");
+  assert.equal(result.provider, "cnn-brasil");
+  assert.equal(result.sourceKind, "independent-tse-derived");
+  assert.equal(result.candidatos[0].votos, 7200);
+  assert.equal(result.candidatos[0].percentual, 52.17);
+  assert.equal(result.progressPercent, 35.5);
+  assert.equal(result.secoesApuradas, 71);
+  assert.equal(result.secoesTotais, null);
+  assert.throws(() => parseCnnAbroad({ results: [{ ...raw[0], uf: "br" }] }), /formato esperado/);
+  assert.throws(() => parseCnnAbroad({ results: [{ ...raw[0], candidates: [] }] }), /dois candidatos/);
+});
+test("fallback exterior consulta o painel CNN somente depois das fontes anteriores", async () => {
+  const tse = await fixture("tse-current");
+  tse.cdabr = "zz";
+  const feed = await fixture("feed-current");
+  feed.presidente.uf.ZZ = { ...feed.presidente.uf.ZZ, votos: { 13: 0, 22: 0 } };
+  const cnn = await fixture("cnn-abroad");
+  const seen = [];
+  const result = await getNormalizedResult({
+    scopeRaw: "exterior-geral",
+    fetchImpl: async (url) => {
+      seen.push(String(url));
+      if (String(url).includes("resultados.tse")) return jsonResponse(tse);
+      if (String(url).includes("eleicoes2026brasil.com")) return jsonResponse(feed);
+      if (String(url).includes("placardovoto.com")) return jsonResponse({}, 404);
+      if (String(url).includes("cloudfront.net")) return jsonResponse(cnn);
+      throw new Error(`Host inesperado: ${url}`);
+    },
+  });
+  assert.equal(result.provider, "cnn-brasil");
+  assert.equal(result.sourceKind, "independent-tse-derived");
+  assert.equal(result.candidatos[0].votos, 7200);
+  assert.ok(seen.findIndex((url) => url.includes("cloudfront.net")) > seen.findIndex((url) => url.includes("placardovoto.com")));
+});
+test("comparação retorna quatro fontes separadas, sem misturar totalizações", async () => {
   const { getSourceResults } = await import("../src/providers/index.mjs");
   const result = await getSourceResults({
     scopeRaw: "exterior-geral",
     fetchImpl: async () => jsonResponse({}, 404),
   });
-  assert.equal(result.sources.length, 3);
+  assert.equal(result.sources.length, 4);
   assert.equal(result.aggregation, "none");
   assert.equal(result.candidatos, undefined);
 });

@@ -15,7 +15,8 @@ Executada em 25/10/2026 com Node 24.19.0, npm 11.9.0 e Chromium do ambiente.
 | Consulta por país                                                        | Austrália: feed independente, 0/29 seções; nenhum voto publicado na resposta consultada       |
 | Descoberta de localidades                                                | 160 registros publicados: países e cidades dos destaques                                      |
 | Histórico ao vivo do exterior                                            | Vazio; indisponibilidade explicitada, sem linha inventada                                     |
-| G1, UOL e CNN                                                            | Acesso às páginas eleitorais bloqueado pelo proxy (CONNECT HTTP 403); integração não validada |
+| G1/CNN                                                                        | Páginas de apuração acessíveis; os JSONs dos CDNs foram bloqueados pelo proxy (CONNECT HTTP 403) |
+| UOL                                                                            | Nenhum feed estruturado de exterior validado                                              |
 | Publicação/merge                                                         | Não executados; requer backend público e configuração de build para dados no Pages            |
 
 Os testes de navegador incluem produção servida no subpath, API ausente/inacessível, dados parciais, percentuais nulos, modos, seleção por mapa/select, seleção de país/cidade, histórico vazio/com lacunas, tooltip por foco, sanitização de texto, fonte independente sem etiqueta de vitória, cancelamento de resposta antiga, imagens locais, fallback e comparação de provedores.
@@ -34,6 +35,16 @@ Os testes de navegador incluem produção servida no subpath, API ausente/inaces
 
 A configuração reutilizável da nuvem foi salva em rascunho (`install_script`, `start_skill`, domínios necessários). Isso não comprova publicação ou restauração do snapshot em uma tarefa nova.
 
+## Pesquisa e integração do painel CNN
+
+- Inspecionada a [página de apuração da CNN](https://www.cnnbrasil.com.br/eleicoes/2026/apuracao/br/segundo-turno/). O código público do painel define os arquivos como `{ano}/{turno}t/{escopo}/{UF}/{cargo}.json`; o cliente busca `resume` e consome `uf`, `updated_at`, `candidates[].votes` e `resume.counted_ballot_box`.
+- Conectado o feed do exterior geral do CDN CNN como quarta fonte; o fallback mantém TSE → feed Eleições 2026 Brasil → Placar → CNN e seleciona uma resposta única. A CNN credita o TSE; o rótulo informa que é cópia do painel e o adaptador não sugere boletins independentes.
+- O painel G1 acessível contém URLs JSON de mapa/panorama nacional e estadual. Não foi encontrado contrato por país/ZZ, então esses dados não preenchem exterior. O UOL não expôs feed estruturado validável.
+- Fixtures artificiais exercitam o contrato CNN no parser e fallback; nenhuma fixture é lida na aplicação publicada. **O JSON real da CNN não foi validado** porque o host CDN respondeu CONNECT HTTP 403. Os hosts `djwnrcncpvp8z.cloudfront.net`, `d1a8dzcgf30rae.cloudfront.net`, `s.glbimg.com`, `s3.glbimg.com` e `storage.googleapis.com` foram salvos no rascunho de egress, que ainda requer publicação nas configurações de ambiente.
+- A página CNN indicava início da apuração às 17h de Brasília; no momento da inspeção (25/10/2026, 12h22 Brasília), TSE, feed e Placar ainda retornavam 0 seções para ZZ. Logo não havia resultados publicados para confirmar naquele instante.
+
+Após o adaptador CNN: `npm test` — 45 testes passaram; `npm run build` concluiu; `npm run verify:pages` — 3 verificações passaram; `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium npm run test:e2e` — 28 testes passaram. No total, 76 verificações/testes passaram sem falha. A consulta real do JSON CNN segue pendente da liberação de rede; os testes de parser usam somente fixture de teste.
+
 ## Atualização: Pages sem backend e eleições históricas
 
 - Build sem `VITE_API_BASE_URL` agora carrega coleta real em `/data/results.json`, com origem e horário, substituindo o erro obrigatório anterior.
@@ -44,3 +55,21 @@ A configuração reutilizável da nuvem foi salva em rascunho (`install_script`,
 - O detalhamento por país/cidade ainda requer backend e contrato correspondente; arquivos publicados incluem o total de ZZ, sem inventar países ou histórico.
 
 A rodada final desta atualização passou em **34 testes de dados/servidor, 21 testes de navegador e 3 verificações de Pages (58 no total)**. `npm ci`, build sem API e consultas HTTP reais com ano/turno também concluídos. As capturas `screenshots/2022-first-desktop.png` e `screenshots/2022-first-mobile.png` mostram os registros históricos reais do primeiro turno, com origem identificada; não usam mocks.
+
+## PNGs, consulta ao vivo e alertas
+
+Esta rodada validou **43 testes de dados/servidor, 28 testes de navegador e 3 verificações de Pages: 74 passaram, sem falhas ou testes pulados**. `npm ci` e build também concluídos.
+
+- Os dois retratos são PNGs RGBA com mais de 20% de pixels totalmente transparentes. Pixels centrais dos rostos coincidem com a fotografia original, considerando o reenquadramento documentado de Lula. Não se usam os rostos estilizados produzidos durante a obtenção das máscaras.
+- A área azul ocupa 75% e a vermelha 25% no cenário de teste, inclusive na verificação de largura efetivamente renderizada. Valores ausentes deixam ambas neutras.
+- Consulta real do endpoint TSE com Origin `https://jonataslferreira-hash.github.io`: HTTP 200 e Access-Control-Allow-Origin correspondente; cabeçalhos ETag/Last-Modified e max-age presentes. A fonte consultada ainda não havia iniciado apuração. O teste de navegador intercepta a fonte para verificar atualização após 60 segundos, coalescência e mudança de valores sem reload; não afirma ter observado uma virada eleitoral real.
+- Áudio desbloqueado por clique em Chromium, perfis distintos por candidato e eventos de virada nas duas direções. A saída de um alto-falante físico não foi medida; a reprodução depende da permissão/volume do navegador.
+- Confirmação oficial aciona o overlay, cor, foco e retorno após 8 segundos, sem repetição. Classificação ao 2º turno, histórico, primeira carga, empate, ausência e vitória independente não acionam anúncio oficial. Movimento reduzido desliga confetes. O polling do backend pode ser pausado.
+
+### Imagens de teste, não resultados reais
+
+Os dois exemplos abaixo usam **somente fixtures interceptadas pelo teste**, têm identificação de teste e não são telas de um resultado real publicado. Os PNGs dos retratos são os mesmos arquivos licenciados da aplicação.
+
+![Teste do fundo proporcional atrás dos PNGs](screenshots/png-proportional-colors-test.png)
+
+![Teste da animação de vitória, com dados controlados](screenshots/victory-animation-test.png)
