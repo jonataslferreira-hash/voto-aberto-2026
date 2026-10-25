@@ -271,7 +271,7 @@ test("histórico acompanha os dois candidatos escolhidos no primeiro turno", asy
   await page.locator("#turnSelect").selectOption("1");
   await page.locator("#leftCandidateSelect").selectOption("70");
   await page.locator("#rightCandidateSelect").selectOption("13");
-  await page.locator("#windowSelect").selectOption("all");
+  await expect(page.locator("#windowSelect")).toBeDisabled();
   await expect(page.locator("#historyLegendFlavio")).toHaveText("Augusto Cury");
   await expect(page.locator("#historyLegendLula")).toHaveText("Lula");
   await expect(page.locator('[data-series="left"]')).toHaveAttribute("d", /^M/);
@@ -412,6 +412,16 @@ test("primeiro turno publicado lista todos os candidatos e permite comparação 
     )
     .toBe("#3195ff");
 });
+test("histórico de 2026 no primeiro turno mostra o resultado final real, sem fingir série temporal", async ({ page }) => {
+  await page.goto("http://127.0.0.1:4174/voto-aberto-2026/");
+  await page.locator("#turnSelect").selectOption("1");
+  await expect(page.locator("#historyTitle")).toHaveText("Resultado final · 1º turno");
+  await expect(page.locator("#historyChart .chart-point")).toHaveCount(2);
+  await expect(page.locator("#historySource")).toContainText("TSE oficial");
+  await expect(page.locator("#historyNote")).toContainText("este ponto não representa uma série temporal");
+  await expect(page.locator("#windowSelect")).toBeDisabled();
+  await expect(page.locator("#historyChart")).not.toContainText("Aguardando a primeira atualização válida");
+});
 test("lista de 2026 é ordenada por votos e apresenta retratos licenciados", async ({ page }) => {
   await page.goto("http://127.0.0.1:4174/voto-aberto-2026/");
   await page.locator("#turnSelect").selectOption("1");
@@ -423,6 +433,31 @@ test("lista de 2026 é ordenada por votos e apresenta retratos licenciados", asy
   await expect(rows.nth(3)).toContainText("RENAN SANTOS");
   await expect(rows.nth(5)).toContainText("ZEMA");
   await expect(rows.nth(2).locator("img")).toHaveAttribute("src", /2026-70-/);
+});
+test("retrato do Renan não mantém os grandes blocos do fundo original", async ({ page }) => {
+  await page.goto("http://127.0.0.1:4174/voto-aberto-2026/");
+  await page.locator("#turnSelect").selectOption("1");
+  await page.locator("#leftCandidateSelect").selectOption("14");
+  const image = page.locator(".candidate--blue .portrait-photo");
+  await image.evaluate((node) => new Promise((resolve) => {
+    if (node.complete) resolve();
+    else node.addEventListener("load", resolve, { once: true });
+  }));
+  const alpha = await image.evaluate(async (node) => {
+    await node.decode();
+    const canvas = document.createElement("canvas");
+    canvas.width = node.naturalWidth;
+    canvas.height = node.naturalHeight;
+    const context = canvas.getContext("2d");
+    context.drawImage(node, 0, 0);
+    return {
+      corner: context.getImageData(20, 80, 1, 1).data[3],
+      face: context.getImageData(80, 90, 1, 1).data[3],
+    };
+  });
+  await expect(image).toHaveAttribute("src", /2026-14-renan-santos/);
+  expect(alpha.corner).toBe(0);
+  expect(alpha.face).toBeGreaterThan(200);
 });
 test("lista abre o perfil detalhado do candidato", async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem("voto-api-url", "published"));

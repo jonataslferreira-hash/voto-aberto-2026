@@ -242,8 +242,13 @@ function loadElectionArchive() {
   }).then(async (response) => {
     if (!response.ok) throw new Error(`Acervo histórico indisponível (HTTP ${response.status}).`);
     const data = await response.json();
-    if (data.schemaVersion !== 1 || !data.elections?.["2022-1"] || !data.elections?.["2022-2"])
-      throw new Error("Acervo histórico sem os dois turnos de 2022.");
+    if (
+      data.schemaVersion !== 1 ||
+      !data.elections?.["2022-1"] ||
+      !data.elections?.["2022-2"] ||
+      !data.elections?.["2026-1"]
+    )
+      throw new Error("Acervo histórico sem os resultados finais esperados.");
     return data;
   }).catch((error) => {
     electionArchivePromise = null;
@@ -777,11 +782,12 @@ function chooseWorldCountry(event) {
 let chartPoints = [];
 function renderHistory(history) {
   const selected = candidates(state.result);
-  const archiveKey = `2022:${state.scope}:${state.pair.join(",")}`;
-  if (state.year === 2022 && state.historyArchive?.key !== archiveKey) {
+  const hasArchivedFinal = state.year === 2022 || (state.year === 2026 && state.turn === 1);
+  const archiveKey = `${state.year}:${state.turn}:${state.scope}:${state.pair.join(",")}`;
+  if (hasArchivedFinal && state.historyArchive?.key !== archiveKey) {
     state.historyArchive = { key: archiveKey, points: null, error: null };
     loadElectionArchive().then((archive) => {
-      if (state.year !== 2022 || state.historyArchive?.key !== archiveKey) return;
+      if (state.historyArchive?.key !== archiveKey) return;
       const scopeKey = state.scope === "brasil"
         ? "br"
         : state.scope === "exterior-geral"
@@ -789,41 +795,50 @@ function renderHistory(history) {
           : state.scope.startsWith("estado:")
             ? state.scope.slice("estado:".length).toLowerCase()
             : null;
-      const resultFor = (turn) =>
-        scopeKey ? archive.elections[`2022-${turn}`]?.results?.[scopeKey] : null;
+      const resultFor = (year, turn) =>
+        scopeKey ? archive.elections[`${year}-${turn}`]?.results?.[scopeKey] : null;
       const valueFor = (result, number) => {
         const candidate = result?.candidatos?.find((entry) => String(entry.numero) === number);
         return Number.isFinite(candidate?.percentual) && candidate.percentual >= 0 && candidate.percentual <= 100
           ? candidate.percentual
           : null;
       };
-      const first = resultFor(1);
-      const second = resultFor(2);
-      const points = [
-        { at: Date.UTC(2022, 9, 2), label: "1º turno", left: valueFor(first, state.pair[0]), right: valueFor(first, state.pair[1]) },
-        { at: Date.UTC(2022, 9, 30), label: "2º turno", left: valueFor(second, state.pair[0]), right: valueFor(second, state.pair[1]) },
-      ];
+      const first = resultFor(state.year, 1);
+      const second = state.year === 2022 ? resultFor(2022, 2) : null;
+      const points = state.year === 2022
+        ? [
+            { at: Date.UTC(2022, 9, 2), label: "1º turno", left: valueFor(first, state.pair[0]), right: valueFor(first, state.pair[1]) },
+            { at: Date.UTC(2022, 9, 30), label: "2º turno", left: valueFor(second, state.pair[0]), right: valueFor(second, state.pair[1]) },
+          ]
+        : [{
+            at: Date.parse(first?.updatedAt) || Date.UTC(2026, 9, 4),
+            label: "Resultado final do 1º turno",
+            left: valueFor(first, state.pair[0]),
+            right: valueFor(first, state.pair[1]),
+          }];
       state.historyArchive = {
         key: archiveKey,
         points,
         provider: first?.provider || second?.provider || "historical-archive",
+        sourceKind: first?.sourceKind || second?.sourceKind || "independent-tse-derived",
       };
       renderHistory(state.history);
     }).catch((error) => {
-      console.warn("Não foi possível carregar os resultados finais do acervo de 2022:", error.message);
-      if (state.year !== 2022 || state.historyArchive?.key !== archiveKey) return;
+      console.warn("Não foi possível carregar os resultados finais arquivados:", error.message);
+      if (state.historyArchive?.key !== archiveKey) return;
       state.historyArchive = { key: archiveKey, points: [], error: error.message };
       renderHistory(state.history);
     });
   }
-  const archive = state.year === 2022 && state.historyArchive?.key === archiveKey
+  const archive = hasArchivedFinal && state.historyArchive?.key === archiveKey
     ? state.historyArchive
     : null;
   const archivedRoundSeries = state.year === 2022 && Array.isArray(archive?.points);
-  $("historyEyebrow").textContent = state.year === 2022 ? "RESULTADOS FINAIS DO ACERVO" : "EVOLUÇÃO DA DISPUTA";
-  $("historyTitle").textContent = state.year === 2022 ? "Comparação entre os turnos" : "Histórico de votos";
-  $("windowSelect").disabled = state.year === 2022;
-  $("windowSelect").value = state.year === 2022 ? "all" : state.window;
+  const archivedSingleRound = state.year === 2026 && state.turn === 1 && Array.isArray(archive?.points);
+  $("historyEyebrow").textContent = archivedRoundSeries || archivedSingleRound ? "RESULTADOS FINAIS ARQUIVADOS" : "EVOLUÇÃO DA DISPUTA";
+  $("historyTitle").textContent = archivedRoundSeries ? "Comparação entre os turnos" : archivedSingleRound ? "Resultado final · 1º turno" : "Histórico de votos";
+  $("windowSelect").disabled = archivedRoundSeries || archivedSingleRound;
+  $("windowSelect").value = archivedRoundSeries || archivedSingleRound ? "all" : state.window;
   const localPoints = state.year === 2026
     ? readObservations().map((sample) => ({
         at: Date.parse(sample.at),
@@ -845,18 +860,18 @@ function renderHistory(history) {
       }))
     : [];
   const remoteFiltered = filterHistoryWindow(remotePoints, state.window);
-  const points = archivedRoundSeries
+  const points = archivedRoundSeries || archivedSingleRound
     ? archive.points
     : remoteFiltered.length
     ? remoteFiltered
     : filterHistoryWindow(localPoints, state.window);
   const localSelected = !remoteFiltered.length && localPoints.length > 0;
   const chartHistoryError =
-    state.year === 2022
+    state.year === 2022 || (state.year === 2026 && state.turn === 1)
       ? archive?.error
         ? `Não foi possível abrir os resultados finais do acervo: ${archive.error}`
-        : !archivedRoundSeries
-          ? "Carregando os resultados finais arquivados dos dois turnos de 2022."
+        : !(archivedRoundSeries || archivedSingleRound)
+          ? "Carregando os resultados finais arquivados desta eleição."
           : !points.length
             ? "O acervo não possui percentuais finais para este candidato e localidade."
             : null
@@ -884,7 +899,9 @@ function renderHistory(history) {
     grid +
     (archivedRoundSeries
       ? [{ at: min, label: "1º turno" }, { at: max, label: "2º turno" }]
-      : [0, 0.5, 1].map((ratio) => ({ at: min + (max - min) * ratio, label: date(new Date(min + (max - min) * ratio), true).slice(0, 5) })))
+      : archivedSingleRound
+        ? [{ at: points[0]?.at ?? min, label: points[0]?.label ?? "1º turno" }]
+        : [0, 0.5, 1].map((ratio) => ({ at: min + (max - min) * ratio, label: date(new Date(min + (max - min) * ratio), true).slice(0, 5) })))
       .map(
         (tick, index, ticks) =>
           `<text class="chart-axis" x="${x(tick.at)}" y="208" text-anchor="${index === 0 ? "start" : index === ticks.length - 1 ? "end" : "middle"}">${e(tick.label)}</text>`,
@@ -905,7 +922,7 @@ function renderHistory(history) {
               : `<circle class="chart-hit" cx="${x(point.at)}" cy="${y(value)}" r="12" tabindex="0" data-point="${index}" aria-label="${e(point.label || date(new Date(point.at)))}: ${e(selected.flavio.name)} ${e(pct(point.left))}; ${e(selected.lula.name)} ${e(pct(point.right))}"><title>${e(point.label || date(new Date(point.at)))} · ${e(selected.flavio.name)} ${e(pct(point.left))} · ${e(selected.lula.name)} ${e(pct(point.right))}</title></circle>`;
           })
           .join("")
-      : `<text class="chart-empty" x="352" y="94" text-anchor="middle">${state.year === 2022 && !archivedRoundSeries ? "Carregando resultados finais" : state.year === 2022 ? "Sem percentuais arquivados neste recorte" : "Aguardando a primeira atualização válida"}</text><text class="chart-empty-note" x="352" y="115" text-anchor="middle">${state.year === 2022 ? "Nenhum valor foi estimado ou preenchido." : "O gráfico começará quando a fonte publicar votos e percentuais."}</text>`);
+      : `<text class="chart-empty" x="352" y="94" text-anchor="middle">${(state.year === 2022 || (state.year === 2026 && state.turn === 1)) && !archive ? "Carregando resultados finais" : (state.year === 2022 || (state.year === 2026 && state.turn === 1)) ? "Sem percentuais arquivados neste recorte" : "Aguardando a primeira atualização válida"}</text><text class="chart-empty-note" x="352" y="115" text-anchor="middle">${state.year === 2022 || (state.year === 2026 && state.turn === 1) ? "Nenhum valor foi estimado ou preenchido." : "O gráfico começará quando a fonte publicar votos e percentuais."}</text>`);
   $("historyLegendFlavio").textContent = selected.flavio.name;
   $("historyLegendLula").textContent = selected.lula.name;
   $("historyLegendFlavio").parentElement.style.setProperty("--series-color", series[0].color);
@@ -914,6 +931,8 @@ function renderHistory(history) {
   $("historyLegendLula").parentElement.querySelector(".dot").style.backgroundColor = series[1].color;
   $("historySource").textContent = archivedRoundSeries
     ? "Acervo histórico independente · TSE derivado"
+    : archivedSingleRound
+    ? `${providerName(archive?.provider)} · resultado final arquivado`
     : remoteFiltered.length
     ? providerName(history?.provider)
     : localPoints.length
@@ -921,6 +940,8 @@ function renderHistory(history) {
       : "Fonte sem série disponível";
   $("historyNote").textContent = archivedRoundSeries && points.length
     ? "Percentuais finais reais do 1º e do 2º turno, por localidade. O acervo não guarda a evolução horária da apuração; candidato ausente em um turno permanece como lacuna."
+    : archivedSingleRound && points.length
+    ? "Percentuais finais publicados do 1º turno nesta localidade. O acervo não guarda a evolução horária da apuração; este ponto não representa uma série temporal."
     : localSelected && points.length
     ? `Série desde o primeiro resultado válido observado neste navegador (${date(new Date(points[0].at))}). Se uma seção fechou antes desta sessão, só um histórico preservado pela fonte pode preencher esse período. Lacunas permanecem vazias.`
     : chartHistoryError || (history?.diagnostics?.length
