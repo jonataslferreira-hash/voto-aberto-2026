@@ -72,7 +72,7 @@ export function createEventDisplay({ overlay, soundButton, soundStatus, app }) {
     returnFocus = document.activeElement;
     overlay.dataset.kind = event.kind;
     overlay.dataset.color = event.color;
-    overlay.style.setProperty("--event", candidateColor(event.number));
+    overlay.style.setProperty("--event", candidateColor(event.number, event.year));
     overlay.setAttribute(
       "role",
       event.kind === "victory" ? "dialog" : "status",

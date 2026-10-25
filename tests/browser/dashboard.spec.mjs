@@ -67,6 +67,17 @@ async function ready(page) {
   await page.goto("./");
   await expect(page.locator("#heroTotals")).toContainText("Flávio Bolsonaro");
 }
+async function hasTransparentCorner(locator) {
+  return locator.evaluate(async (image) => {
+    await image.decode();
+    const canvas = document.createElement("canvas");
+    canvas.width = image.naturalWidth;
+    canvas.height = image.naturalHeight;
+    const context = canvas.getContext("2d");
+    context.drawImage(image, 0, 0);
+    return context.getImageData(0, 0, 1, 1).data[3] === 0;
+  });
+}
 for (const width of [1440, 1280, 768, 390, 360])
   test(`layout ${width}px sem overflow ou erro de console`, async ({
     page,
@@ -349,8 +360,9 @@ test("primeiro turno publicado lista todos os candidatos e permite comparação 
   );
   await expect(page.locator(".candidate--blue .portrait-photo")).toHaveAttribute(
     "src",
-    /2026-/,
+    /2026-.*\.png/,
   );
+  expect(await hasTransparentCorner(page.locator(".candidate--blue .portrait-photo"))).toBe(true);
   await page.locator("#leftCandidateSelect").selectOption("13");
   await expect
     .poll(() =>
@@ -399,6 +411,8 @@ test("2022 apresenta os dois turnos, candidatos corretos e origem histórica exp
   await expect(page.locator("#allCandidates .candidate-table>div")).toHaveCount(
     2,
   );
+  await expect(page.locator(".candidate--blue .portrait-photo")).toHaveAttribute("src", /2022-22-jair.*\.png/);
+  await expect(page.locator(".candidate--red .portrait-photo")).toHaveAttribute("src", /lula-cutout/);
   await expect(page.locator(".candidate--blue h2")).toHaveText(
     "JAIR BOLSONARO",
   );
@@ -418,15 +432,18 @@ test("2022 apresenta os dois turnos, candidatos corretos e origem histórica exp
   await expect(page.locator("#allCandidates .candidate-table>div")).toHaveCount(
     11,
   );
+  await expect(page.locator("#allCandidates .candidate-table img")).toHaveCount(11);
+  await expect(page.locator("#allCandidates .candidate-table>div").nth(0)).toContainText("LULA");
+  await expect(page.locator("#allCandidates .candidate-table>div").nth(1)).toContainText("JAIR BOLSONARO");
   await expect(
     page.locator(".candidate--blue .candidate__votes"),
   ).toContainText("51.072.345");
   await expect(page.locator(".candidate--red .candidate__votes")).toContainText(
     "57.259.504",
   );
-  await expect(
-    page.locator(".candidate--blue .portrait-fallback"),
-  ).toBeVisible();
+  const jairPhoto = page.locator(".candidate--blue .portrait-photo");
+  await expect(jairPhoto).toHaveAttribute("src", /2022-22-jair.*\.png/);
+  expect(await hasTransparentCorner(jairPhoto)).toBe(true);
   await page.locator('[data-main-scope="exterior"]').click();
   await expect(page.locator("#exteriorSources .source-chip")).toHaveCount(0);
 });
