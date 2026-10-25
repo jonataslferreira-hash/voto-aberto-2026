@@ -74,11 +74,14 @@ const server = http.createServer(async (req, res) => {
     return json(res, 200, payload);
   }
 
-  if (
-    ["/api/history", "/api/locations", "/api/sources"].includes(url.pathname) &&
-    ((url.searchParams.get("year") || "2026") !== "2026" ||
-      (url.searchParams.get("turn") || "2") !== "2")
-  ) {
+  const detailYear = Number(url.searchParams.get("year") || "2026");
+  const detailTurn = Number(url.searchParams.get("turn") || "2");
+  const unavailableHistory = url.pathname === "/api/history" &&
+    (detailYear !== 2026 || ![1, 2].includes(detailTurn));
+  const unavailableOtherDetails =
+    ["/api/locations", "/api/sources"].includes(url.pathname) &&
+    (detailYear !== 2026 || detailTurn !== 2);
+  if (unavailableHistory || unavailableOtherDetails) {
     return json(res, 200, {
       points: [],
       locations: [],
@@ -86,7 +89,9 @@ const server = http.createServer(async (req, res) => {
       error: "Detalhamento não disponível para o ano/turno selecionado.",
       diagnostics: [
         {
-          message: "Este serviço detalhado cobre somente 2026, segundo turno.",
+          message: unavailableHistory
+            ? "Histórico disponível somente para 2026, nos turnos publicados pelas fontes."
+            : "Detalhamento de localidades/fontes cobre somente 2026, segundo turno.",
         },
       ],
     });
@@ -96,6 +101,8 @@ const server = http.createServer(async (req, res) => {
       scopeRaw: url.searchParams.get("scope") || "brasil",
       provider: url.searchParams.get("provider") || "auto",
       window: url.searchParams.get("window") || "1h",
+      year: detailYear,
+      turn: detailTurn,
     });
     return json(res, 200, payload);
   }

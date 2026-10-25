@@ -15,6 +15,7 @@
     "verify:pages": "node --test tests/pages-build.test.mjs",
     "test:e2e": "npm run build && playwright test",
     "data:refresh": "node scripts/refresh-results.mjs",
+    "data:archive2026history": "node scripts/archive-g1-history.mjs",
     "data:import2022": "node scripts/import-2022.mjs"
   },
   "devDependencies": {

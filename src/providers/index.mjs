@@ -11,12 +11,14 @@ import { fetchEleicoesFeed, fetchEleicoesHistory } from "./eleicoesFeed.mjs";
 import { fetchPlacar, fetchPlacarHistory } from "./placarDoVoto.mjs";
 import { fetchCnnAbroad } from "./cnnBrasil.mjs";
 import { fetchWithPolicy } from "../lib/http-cache.mjs";
+import { fetchG1History } from "./g1History.mjs";
 
 export const PROVIDER_LABELS = {
   tse: "TSE oficial",
   "eleicoes-feed": "Feed independente baseado no TSE",
   "placar-do-voto": "Placar do Voto (independente)",
   "cnn-brasil": "CNN Brasil · painel baseado no TSE",
+  "g1-history": "G1 · histórico baseado no TSE",
   unavailable: "Dados indisponíveis",
   "historical-archive": "Acervo histórico · TSE derivado",
 };
@@ -165,19 +167,22 @@ function normalizePoint(point) {
   const flavio =
     point?.flavio ?? point?.candidato22 ?? point?.pctFlavio ?? null;
   if (!at) return null;
+  const candidatePercents = Object.fromEntries(
+    Object.entries(point?.candidatePercents || {}).map(([id, value]) => [id, historyPercent(value)]),
+  );
   return {
     at,
     lulaPercent: historyPercent(lula),
     flavioPercent: historyPercent(flavio),
+    candidatePercents,
   };
 }
 
-function applyWindow(points, windowKey) {
+function applyWindow(points, windowKey, anchor = Date.now()) {
   if (windowKey === "all") return points;
-  const now = Date.now();
   const horizonMs = windowKey === "1h" ? 3600000 : 10800000;
   return points.filter(
-    (p) => Date.parse(p.at) >= now - horizonMs && Date.parse(p.at) <= now,
+    (p) => Date.parse(p.at) >= anchor - horizonMs && Date.parse(p.at) <= anchor,
   );
 }
 
@@ -185,16 +190,29 @@ export async function getHistoryResponse({
   scopeRaw,
   provider = "auto",
   window = "1h",
+  year = 2026,
+  turn = 2,
   fetchImpl = fetch,
 }) {
   const scope = parseScope(scopeRaw);
   const diagnostics = [];
   const providers =
-    provider === "auto" ? ["eleicoes-feed", "placar-do-voto"] : [provider];
+    provider === "auto"
+      ? Number(year) === 2026 && Number(turn) === 1
+        ? ["g1-history"]
+        : ["eleicoes-feed", "placar-do-voto"]
+      : [provider];
   for (const name of providers) {
     try {
       let list;
-      if (name === "eleicoes-feed") {
+      let sourceUrl;
+      if (name === "g1-history") {
+        if (Number(year) !== 2026)
+          throw new Error("O histórico G1 está validado para as eleições de 2026.");
+        const result = await fetchG1History(scope, turn, fetchImpl);
+        list = result.points;
+        sourceUrl = result.sourceUrl;
+      } else if (name === "eleicoes-feed") {
         if (scope.kind !== "brasil")
           throw new Error(
             "Histórico do feed é nacional; não representa esta localidade.",
@@ -205,15 +223,17 @@ export async function getHistoryResponse({
           throw new Error("Histórico por país/cidade não validado.");
         list = await fetchPlacarHistory(scope, fetchImpl);
       } else throw new Error("Provedor sem endpoint de histórico configurado.");
-      const points = applyWindow(
-        list.map(normalizePoint).filter(Boolean),
-        window,
-      );
+      const normalized = list.map(normalizePoint).filter(Boolean);
+      const anchor = Number(turn) === 1 && normalized.length
+        ? Math.max(...normalized.map((point) => Date.parse(point.at)))
+        : Date.now();
+      const points = applyWindow(normalized, window, anchor);
       if (points.length)
         return {
           points,
           provider: name,
           sourceKind: "independent-tse-derived",
+          sourceUrl,
           scope: scopeRaw,
           gapPolicy: "missing-as-null",
           diagnostics,
