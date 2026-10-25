@@ -2,6 +2,8 @@
 
 Central independente de apuração presidencial: tema escuro, candidatos nas laterais, urnas apuradas no centro, mapa geográfico, regiões, exterior e histórico. Flávio permanece à esquerda (azul), Lula à direita (vermelho). O modo completo é o padrão; o modo simples preserva disputa, localidade, votos, diferença, urnas, status e fonte, sem recarregar a página.
 
+**Agora o site funciona no GitHub Pages mesmo sem backend configurado.** Sem `VITE_API_BASE_URL`, lê `data/results.json` publicado junto com o build: uma coleta real identificada, nunca uma fixture. O aviso informa a data da coleta e deixa explícito que esse modo não é uma conexão ao vivo.
+
 **Nenhum resultado é simulado em produção.** As fixtures existem somente em `tests/`. Ausência é representada por `null`/“—”. Zeros efetivamente publicados pelas fontes são preservados; zero votos não é interpretado como empate ou liderança. Sem percentuais válidos, o fundo e a barra ficam neutros.
 
 ## Desenvolvimento local
@@ -17,6 +19,8 @@ npm start                  # backend/proxy: porta 3000
 VITE_API_BASE_URL=http://localhost:3000 npm run dev:pages -- --host 0.0.0.0
 # frontend Vite: porta 5173, caminho /voto-aberto-2026/
 ```
+
+O frontend também pode iniciar sem proxy com `npm run dev:pages`, usando os arquivos publicados. Para dados ao vivo e detalhamento por país/cidade, use o proxy conforme acima.
 
 O frontend precisa do Vite: o HTML bruto servido pelo servidor Node não substitui a transformação de módulos e variáveis do Vite. Backend e frontend estático permanecem separados. `PORT` permite alterar a porta do proxy. `npm run dev` reinicia o backend quando os arquivos mudam.
 
@@ -36,7 +40,23 @@ A base continua `/voto-aberto-2026/`. O build gera `dist/index.html`, `dist/404.
 
 O workflow `.github/workflows/deploy-pages.yml` mantém a publicação via GitHub Actions quando `main` recebe alterações. Ele instala dependências, executa testes de dados e navegador, gera o build e valida os artefatos antes de publicar. Configure **Settings → Pages → Source: GitHub Actions**. Configure a variável de repositório **`VITE_API_BASE_URL`** em **Settings → Secrets and variables → Actions → Variables** para apontar ao backend publicado. O proxy pode rodar em um serviço Node separado; Pages não executa esse servidor.
 
-Sem a variável, o build é válido e mostra “API indisponível no GitHub Pages” com um diagnóstico explícito. Não existe fallback para dados de exemplo. A configuração da nuvem é salva como rascunho para revisão/publicação; isso não publica o site nem provisiona o backend público.
+Sem a variável, o build usa os dados reais versionados em `static/data/results.json`. `npm run data:refresh` atualiza as eleições ainda não concluídas diretamente do TSE; o workflow chama esse comando antes da publicação e possui agendamento a cada 15 minutos (horário de execução/publicação do GitHub não é garantido). Eleições concluídas e acervos históricos são preservados. Não existe fallback para dados de exemplo. Se a consulta falhar, preserva a última coleta válida e informa sua data; não renova artificialmente seu horário. O agendamento pode ser desativado no workflow quando não for mais necessário. A configuração da nuvem é salva como rascunho para revisão/publicação; isso não publica o site nem provisiona o backend público.
+
+## Ano, turno, candidatos e conexão
+
+Os seletores acima da disputa permitem **2026 e 2022, primeiro e segundo turnos**, além dos dois candidatos usados na comparação. O primeiro turno apresenta também a lista de todos os candidatos devolvidos pela fonte: 12 no arquivo de 2026 e 11 no arquivo de 2022 coletados. O segundo turno de 2022 mostra Jair Bolsonaro e Lula, sem reutilizar o nome/retrato de Flávio. Trocar ano/turno cancela consultas, limpa mapa/regiões e impede que um backend antigo exiba dados de 2026 como se fossem de 2022. Retratos sem origem adequada ao candidato/ano são substituídos por indisponibilidade.
+
+Em **Configurações → URL do backend (opcional)**, salve uma URL HTTPS pública. A preferência é local ao navegador; não altera configuração de outras pessoas nem recebe segredos. “Usar dados publicados do site” retorna ao modo sem servidor. `VITE_API_BASE_URL` continua funcionando como configuração inicial de build. Um backend deve ser atualizado junto com o frontend para entender os parâmetros `year` e `turn`.
+
+Os percentuais exibidos são referentes a todos os votos válidos, não recalculados para fingir que dois candidatos do primeiro turno somam 100%. O espaço restante da barra representa os demais candidatos; o fundo distribui as duas cores pela razão da comparação selecionada. Histórico de outra dupla/ano/turno não é reaproveitado.
+
+### Procedência do acervo de 2022
+
+O endpoint de divulgação de 2022 testado atualmente retorna 404 e o CDN do acervo oficial foi bloqueado pelo proxy desta nuvem. Portanto os registros de 2022 são identificados como **acervo histórico independente derivado do TSE**, nunca como consulta direta atual ao TSE.
+
+Fonte arquivada: [kalebefukuda/brazil-election-results-2026, public/historico/2022](https://github.com/kalebefukuda/brazil-election-results-2026/tree/e80326fa1ee8b4ebbeb8a31a215e898807798e79/public/historico/2022), fixada no commit `e80326fa1ee8b4ebbeb8a31a215e898807798e79`. O projeto documenta a conversão dos CSVs do [Portal de Dados Abertos do TSE](https://dadosabertos.tse.jus.br/dataset/resultados-2022). Foram extraídos somente fatos eleitorais (nomes, partidos, números e votos), sem copiar código, imagens ou simulações desse projeto. `sourceUrl` aponta ao arquivo exato; `originalSourceUrl` identifica o acervo original. A soma dos 27 estados/DF e exterior foi validada contra o Brasil para **cada candidato nos dois turnos**, e os totais nacionais do segundo turno coincidem com uma segunda cópia pública contemporânea de 2022 ([timeuz/eleicoes2022, pres_final.json](https://github.com/timeuz/eleicoes2022/blob/main/static/pres_final.json)).
+
+`scripts/import-2022.mjs` reproduz a importação e recusa denominadores, IDs e somas inconsistentes. Percentuais são calculados a partir dos votos válidos do arquivo. As quantidades de seções foram omitidas porque divergiam da outra cópia e não puderam ser revalidadas na fonte original; não foi preenchido “100%” artificialmente. Os resultados históricos carregam seu horário histórico e a data da coleta separadamente. O backend automático também pode servir esse acervo local. O seletor explícito TSE continua consultando o TSE e informa eventual 404, sem disfarçar o espelho como consulta oficial.
 
 ## Fontes reais e prioridade
 
@@ -66,11 +86,13 @@ O arquivo compacto de ZZ não informa seu horário de geração. Nesses resultad
 
 A tela consulta a localidade selecionada a cada **3 segundos**, suspende consultas quando a aba fica oculta e cancela respostas antigas ao trocar localidade. O exterior completo e a comparação de fontes atualizam em até **30 segundos**; mapa/regiões em até 60 segundos; metadados de localidades são reutilizados por seis horas no backend. Não se promete “tempo real” além do que a fonte publica.
 
+Detalhamento de países/cidades e séries temporais do backend legado cobre somente 2026/segundo turno; em outras eleições o serviço informa indisponibilidade em vez de usar a série errada. Brasil, estados e total ZZ estão nos arquivos publicados dos quatro contextos.
+
 O backend usa cache fresco (TSE/Placar 30 s, feed 15 s), ETag, Last-Modified, revalidação 304, coalescência de pedidos concorrentes, limite global de quatro consultas externas e cooldown/backoff para falhas e 429. Um Retry-After longo vira cooldown, sem prender um worker dormindo. O horário da coleta é preservado no cache; uma resposta em cache não recebe um horário ficticiamente novo.
 
 ## Contratos do proxy
 
-- `GET /api/results?scope=brasil&provider=auto`: `provider`, `sourceKind`, `scope`, `status`, `updatedAt`, `retrievedAt`, `sourceUrl`, `votosValidos`, `secoesApuradas`, `secoesTotais`, `progressPercent`, `candidatos[]`, `consolidationWarning` e `diagnostics[]`. Candidato: `{candidato, votos, percentual}`. `metadataSourceUrl` identifica a página de associação de cidades quando necessária.
+- `GET /api/results?scope=brasil&provider=auto&year=2026&turn=2`: `provider`, `sourceKind`, `scope`, `status`, `updatedAt`, `retrievedAt`, `sourceUrl`, `votosValidos`, `secoesApuradas`, `secoesTotais`, `progressPercent`, `candidatos[]`, `consolidationWarning` e `diagnostics[]`. Candidato: `{candidato, votos, percentual}`. `metadataSourceUrl` identifica a página de associação de cidades quando necessária.
 - Escopos: `brasil`, `estado:sp`, `exterior-geral`, `exterior-pais:au`, `exterior-cidade:au/30562`. Os escopos legados continuam sendo aceitos quando a fonte fornece `locais[]` com resultados próprios.
 - `GET /api/history?scope=brasil&provider=auto&window=1h`: `{points:[{at,lulaPercent,flavioPercent}], gapPolicy:"missing-as-null", provider?, diagnostics}`. Janelas: `1h`, `3h`, `all`. Histórico nacional não substitui histórico estadual/exterior. Séries vazias e falhas possuem mensagens diferentes.
 - `GET /api/locations?country=au`: `{locations:[{id,nome,tipo,countryCode}], sourceUrl?, highlights?, diagnostics?, error?}`. Sem `country`, retorna países e cidades dos destaques publicados.

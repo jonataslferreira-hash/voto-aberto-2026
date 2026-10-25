@@ -1,6 +1,8 @@
+import { electionFor, electionKey } from "./elections.js";
 import { BRAZIL_MAP } from "./brazil-map.js";
 import {
   STATES,
+  setComparisonNumbers,
   escapeHtml as e,
   candidates,
   comparison,
@@ -16,11 +18,88 @@ const PORTRAITS = {
   blue: new URL("./images/flavio-2026.jpg", import.meta.url).href,
   red: new URL("./images/lula-oficial-2023.jpg", import.meta.url).href,
 };
-const API_BASE_URL =
+const DEFAULT_API_BASE_URL =
   (import.meta.env.VITE_API_BASE_URL || "").trim().replace(/\/+$/, "") || null;
+let API_BASE_URL = DEFAULT_API_BASE_URL;
+try {
+  const saved = localStorage.getItem("voto-api-url");
+  API_BASE_URL = saved === "published" ? null : saved || DEFAULT_API_BASE_URL;
+} catch (error) {
+  console.info("Preferência de conexão não pôde ser lida.");
+}
+let snapshotCache = null,
+  snapshotAt = 0,
+  snapshotPending = null;
+async function publishedJSON(path, query) {
+  if (!snapshotCache || Date.now() - snapshotAt > 30000) {
+    snapshotPending ??= fetch(`${import.meta.env.BASE_URL}data/results.json`, {
+      cache: "no-cache",
+    })
+      .then(async (r) => {
+        if (!r.ok)
+          throw new Error(
+            `Dados publicados indisponíveis (HTTP ${r.status}). Configure um backend em Configurações ou atualize a publicação.`,
+          );
+        const j = await r.json();
+        if (j.schemaVersion !== 1)
+          throw new Error("Arquivo de resultados inválido.");
+        snapshotCache = j;
+        snapshotAt = Date.now();
+        return j;
+      })
+      .finally(() => {
+        snapshotPending = null;
+      });
+    await snapshotPending;
+  }
+  const election = snapshotCache.elections[electionKey(query.year, query.turn)];
+  if (!election) throw new Error("Eleição não incluída nos dados publicados.");
+  if (
+    query.scope?.startsWith("exterior-pais:") ||
+    query.scope?.startsWith("exterior-cidade:")
+  )
+    return unavailable(
+      "Dados por país/cidade requerem um backend configurado.",
+    );
+  const uf =
+    query.scope === "exterior-geral"
+      ? "zz"
+      : query.scope?.startsWith("estado:")
+        ? query.scope.split(":")[1]
+        : "br";
+  const result = {
+    ...(election.results[uf] ||
+      unavailable("Localidade não incluída nesta publicação.")),
+    scope: query.scope,
+    year: state.year,
+    turn: state.turn,
+  };
+  if (path === "/api/results")
+    return {
+      ...result,
+      publishedAt: snapshotCache.generatedAt,
+      refreshError: election.refreshError,
+    };
+  if (path === "/api/history")
+    return {
+      points: [],
+      error:
+        "Série histórica não incluída nos dados publicados. Use um backend para acompanhar o histórico.",
+    };
+  if (path === "/api/sources")
+    return { sources: [result], aggregation: "none" };
+  return {
+    locations: [],
+    error:
+      "Detalhamento por país/cidade requer um backend. O total geral do exterior está disponível nos dados publicados.",
+  };
+}
 const $ = (id) => document.getElementById(id);
 const state = {
   mode: "complete",
+  year: 2026,
+  turn: 2,
+  pair: ["22", "13"],
   provider: "auto",
   scope: "brasil",
   mainScope: "brasil",
@@ -51,6 +130,7 @@ const providerName = (p) =>
     tse: "TSE oficial",
     "eleicoes-feed": "Feed independente",
     "placar-do-voto": "Placar do Voto",
+    "historical-archive": "Acervo histórico · TSE derivado",
   })[p] || "Indisponível";
 const sourceKind = (p) =>
   ({
@@ -104,7 +184,8 @@ function unavailable(message) {
   };
 }
 async function getJSON(path, query = {}, signal) {
-  if (!API_BASE_URL) throw new Error("API_BASE_URL_NOT_CONFIGURED");
+  query = { ...query, year: state.year, turn: state.turn };
+  if (!API_BASE_URL) return publishedJSON(path, query);
   let url;
   try {
     url = new URL(API_BASE_URL + path);
@@ -135,32 +216,57 @@ async function getJSON(path, query = {}, signal) {
     throw new Error("Contrato inválido em /api/results");
   if (path === "/api/results" && data.scope && data.scope !== query.scope)
     throw new Error("A resposta da API pertence a outra localidade.");
+  if (
+    path === "/api/results" &&
+    ((data.year !== undefined && Number(data.year) !== state.year) ||
+      (data.turn !== undefined && Number(data.turn) !== state.turn) ||
+      ((state.year !== 2026 || state.turn !== 2) &&
+        (Number(data.year) !== state.year || Number(data.turn) !== state.turn)))
+  )
+    throw new Error(
+      "Backend não confirmou o ano/turno solicitado; resposta descartada.",
+    );
   return data;
 }
 function voteBar(payload, compact = false) {
   const c = comparison(payload);
-  return `<div class="vote-track ${c.valid ? "" : "unavailable"}" role="img" aria-label="${c.valid ? `Flávio ${pct(c.flavio.pct)}; Lula ${pct(c.lula.pct)}` : "Percentuais indisponíveis"}"><i class="blue" style="width:${c.valid ? c.flavio.pct : 0}%"></i><i class="red" style="width:${c.valid ? c.lula.pct : 0}%"></i></div>${compact ? "" : `<div class="bar-legend"><span>FLÁVIO BOLSONARO · ${e(pct(c.flavio.pct))}</span><span>${e(pct(c.lula.pct))} · LULA</span></div>`}`;
+  return `<div class="vote-track ${c.valid ? "" : "unavailable"}" role="img" aria-label="${c.valid ? `${e(c.flavio.name)} ${pct(c.flavio.pct)}; ${e(c.lula.name)} ${pct(c.lula.pct)}` : "Percentuais indisponíveis"}"><i class="blue" style="width:${c.valid ? c.flavio.pct : 0}%"></i><i class="red" style="width:${c.valid ? c.lula.pct : 0}%"></i></div>${compact ? "" : `<div class="bar-legend"><span>${e(c.flavio.name)} · ${e(pct(c.flavio.pct))}</span><span>${e(pct(c.lula.pct))} · ${e(c.lula.name)}</span></div>`}`;
 }
 function renderCandidate(name, party, number, c, color) {
-  return `<article class="candidate candidate--${color}"><div class="candidate-info"><p class="candidate-kicker"><b>${number}</b> ${party} <span>•</span> PRESIDENTE</p><h2>${name}</h2><p class="candidate__pct" aria-label="${e(pct(c.pct))}">${c.pct === null ? "—" : e(pct(c.pct).slice(0, -1))}${c.pct === null ? "" : "<small>%</small>"}</p><p class="candidate__votes">${e(int(c.votes))} <span>votos</span></p><div class="candidate-progress" aria-hidden="true"><i style="width:${c.pct ?? 0}%"></i></div></div><div class="portrait-frame"><img class="portrait-photo" src="${PORTRAITS[color]}" alt="Retrato ${color === "blue" ? "TSE, 2026, de Flávio Bolsonaro" : "oficial de Lula, Ricardo Stuckert/PR, 2023"}" width="${color === "blue" ? 411 : 960}" height="${color === "blue" ? 546 : 1229}" decoding="async"><span class="portrait-fallback">Retrato indisponível</span></div></article>`;
+  return `<article class="candidate candidate--${color}"><div class="candidate-info"><p class="candidate-kicker"><b>${e(number)}</b> ${e(party)} <span>•</span> PRESIDENTE</p><h2>${e(name)}</h2><p class="candidate__pct" aria-label="${e(pct(c.pct))}">${c.pct === null ? "—" : e(pct(c.pct).slice(0, -1))}${c.pct === null ? "" : "<small>%</small>"}</p><p class="candidate__votes">${e(int(c.votes))} <span>votos</span></p><div class="candidate-progress" aria-hidden="true"><i style="width:${c.pct ?? 0}%"></i></div></div><div class="portrait-frame ${state.year !== 2026 || (color === "blue" ? !/fl[aá]vio/i.test(name) : !/lula/i.test(name)) ? "is-unavailable" : ""}"><img class="portrait-photo" ${state.year === 2026 && (color === "blue" ? /fl[aá]vio/i.test(name) : /lula/i.test(name)) ? `src="${PORTRAITS[color]}"` : ""} alt="Retrato ${color === "blue" ? "TSE, 2026, de Flávio Bolsonaro" : "oficial de Lula, Ricardo Stuckert/PR, 2023"}" width="${color === "blue" ? 411 : 960}" height="${color === "blue" ? 546 : 1229}" decoding="async"><span class="portrait-fallback">Retrato indisponível</span></div></article>`;
 }
 function renderResult(result) {
+  result = { ...result, year: state.year, turn: state.turn };
+  $("providerSelect").disabled = !API_BASE_URL;
   state.result = result;
+  syncCandidateOptions(result);
   const c = comparison(result),
     pr = progress(result),
     valid = result.sourceKind !== "unavailable";
   $("app").dataset.gradient = c.valid ? "live" : "neutral";
   $("app").style.setProperty("--split", `${c.split ?? 50}%`);
   $("heroTotals").innerHTML =
-    renderCandidate("Flávio Bolsonaro", "PL", "22", c.flavio, "blue") +
-    renderCandidate("Lula", "PT", "13", c.lula, "red");
+    renderCandidate(
+      c.flavio.name,
+      c.flavio.party,
+      c.flavio.number,
+      c.flavio,
+      "blue",
+    ) +
+    renderCandidate(c.lula.name, c.lula.party, c.lula.number, c.lula, "red");
   $("heroBar").innerHTML = voteBar(result);
+  const legends = document.querySelectorAll(".map-legend>span");
+  if (legends[0])
+    legends[0].innerHTML = `<i class="dot blue"></i>${e(c.flavio.name)} na frente`;
+  if (legends[1])
+    legends[1].innerHTML = `<i class="dot red"></i>${e(c.lula.name)} na frente`;
+
   $("heroDifference").innerHTML =
     c.diff === null
       ? "Diferença não disponível"
       : c.diff === 0
         ? "Empate em votos"
-        : `<strong>${e(int(c.diff))} votos</strong> de diferença · ${c.leader === "blue" ? "Flávio" : "Lula"} à frente`;
+        : `<strong>${e(int(c.diff))} votos</strong> de diferença · ${e(c.leader === "blue" ? c.flavio.name : c.lula.name)} à frente`;
   $("heroSource").innerHTML = result.sourceUrl
     ? safeLink(result.sourceUrl, sourceKind(result))
     : e(sourceKind(result));
@@ -169,9 +275,11 @@ function renderResult(result) {
   $("resultStatus").textContent = statusLabel(result);
   $("connection").dataset.status = valid ? "online" : "error";
   $("connection").innerHTML =
-    `<i></i>${valid ? "API conectada" : API_BASE_URL ? "Sem dados" : "API não configurada"}`;
+    `<i></i>${valid ? (API_BASE_URL ? "API conectada" : "Dados publicados") : "Sem dados"}`;
   $("notice").textContent =
-    result.consolidationWarning ||
+    (result.publishedAt
+      ? `Dados publicados; coleta ${date(result.retrievedAt)}. Atualização periódica, sem conexão ao vivo. `
+      : "") + (result.refreshError || result.consolidationWarning || "") ||
     (!c.valid
       ? "Percentuais não informados pela fonte. Gradiente neutro; nenhum valor foi estimado."
       : "");
@@ -279,14 +387,14 @@ function renderMap() {
           : c.leader === "blue"
             ? `color-mix(in srgb, #3b83ee ${30 + intensity * 70}%, #1d2b41)`
             : `color-mix(in srgb, #f45b76 ${30 + intensity * 70}%, #2a2436)`;
-    const label = `${s.name} · ${c.leader === "unknown" ? "Sem dados" : c.leader === "tie" ? "Empate em votos" : `${c.leader === "blue" ? "Flávio" : "Lula"} na frente · ${providerName(p.provider)}`}`;
+    const label = `${s.name} · ${c.leader === "unknown" ? "Sem dados" : c.leader === "tie" ? "Empate em votos" : `${e(c.leader === "blue" ? c.flavio.name : c.lula.name)} na frente · ${providerName(p.provider)}`}`;
     node.setAttribute("aria-label", `Selecionar ${label}`);
     node.querySelector("title").textContent = label;
   }
   const p = state.snapshots.get(state.uf),
     c = comparison(p);
   $("mapDetail").innerHTML =
-    `<strong>${e(STATES.find((s) => s.uf === state.uf)?.name)}</strong><span>${state.mainScope === "estados" ? "Selecionado" : "Em destaque"}</span><p class="value">${e(pct(c.flavio.pct))} Flávio</p><p class="red-text">${e(pct(c.lula.pct))} Lula</p><p>${e(int(c.diff))} votos de diferença</p><p>${e(p ? providerName(p.provider) : "Sem dados")}</p><p>${e(date(p?.updatedAt))}</p>`;
+    `<strong>${e(STATES.find((s) => s.uf === state.uf)?.name)}</strong><span>${state.mainScope === "estados" ? "Selecionado" : "Em destaque"}</span><p class="value">${e(pct(c.flavio.pct))} ${e(c.flavio.name)}</p><p class="red-text">${e(pct(c.lula.pct))} ${e(c.lula.name)}</p><p>${e(int(c.diff))} votos de diferença</p><p>${e(p ? providerName(p.provider) : "Sem dados")}</p><p>${e(date(p?.updatedAt))}</p>`;
 }
 function renderRegions() {
   $("regionRows").innerHTML = regionGroups(state.snapshots)
@@ -299,18 +407,20 @@ function renderRegions() {
                   const payload = {
                     candidatos: [
                       {
-                        candidato: "Flávio",
+                        candidato: candidates(state.result).flavio.name,
+                        numero: state.pair[0],
                         percentual: g.flavioPct,
                         votos: g.flavio,
                       },
                       {
-                        candidato: "Lula",
+                        candidato: candidates(state.result).lula.name,
+                        numero: state.pair[1],
                         percentual: g.lulaPct,
                         votos: g.lula,
                       },
                     ],
                   };
-                  return `<div class="region-values"><span>${e(pct(g.flavioPct))}</span><span class="red-text">${e(pct(g.lulaPct))}</span></div>${voteBar(payload, true)}<p class="region-note">F ${e(int(g.flavio))} · L ${e(int(g.lula))} votos · Δ ${e(int(Math.abs(g.flavio - g.lula)))}</p><p class="region-note">${e(providerName(g.provider))} · ${g.states}/${region.total} UFs${g.states < region.total ? " · Cobertura incompleta" : ""} · ${g.statuses.every((s) => s === "totalized") ? "Totalização finalizada" : g.statuses.some((s) => s === "partial") ? "Apuração parcial" : "Aguardando apuração"} · ${g.times.length ? e(date(g.times.slice().sort()[0])) : "Horário não informado"}</p>`;
+                  return `<div class="region-values"><span>${e(pct(g.flavioPct))}</span><span class="red-text">${e(pct(g.lulaPct))}</span></div>${voteBar(payload, true)}<p class="region-note">A ${e(int(g.flavio))} · B ${e(int(g.lula))} votos · Δ ${e(int(Math.abs(g.flavio - g.lula)))}</p><p class="region-note">${e(providerName(g.provider))} · ${g.states}/${region.total} UFs${g.states < region.total ? " · Cobertura incompleta" : ""} · ${g.statuses.every((s) => s === "totalized") ? "Totalização finalizada" : g.statuses.some((s) => s === "partial") ? "Apuração parcial" : "Aguardando apuração"} · ${g.times.length ? e(date(g.times.slice().sort()[0])) : "Horário não informado"}</p>`;
                 })
                 .join("")
             : `<div class="region-values"><span>—</span><span class="red-text">—</span></div><div class="vote-track unavailable"></div><p class="region-note">Dados indisponíveis · nenhuma UF com totais válidos</p>`
@@ -364,13 +474,23 @@ function renderExterior() {
           if (general && (!p || p.sourceKind === "unavailable"))
             return `<div class="empty-state"><span class="empty-symbol" aria-hidden="true">◎</span><h3>Exterior sem totalização disponível</h3><p>${e(p?.consolidationWarning || "Aguardando uma resposta válida da fonte. Países e cidades aparecem somente quando retornados pela API.")}</p></div>`;
           const c = comparison(p);
-          return `<button type="button" class="exterior-row" data-exterior-scope="${e(l.scope)}" aria-label="Selecionar ${e(l.nome)}"><span class="exterior-name"><span class="country-code">${e(l.countryCode || "LOC")}</span>${e(l.nome)} <span aria-hidden="true">↗</span></span><span class="exterior-values"><span>Flávio ${e(pct(c.flavio.pct))} · ${e(int(c.flavio.votes))}</span><span>Lula ${e(pct(c.lula.pct))} · ${e(int(c.lula.votes))}</span></span>${voteBar(p, true)}<span class="exterior-meta">Δ ${e(int(c.diff))} votos · ${e(pct(progress(p)))} apurado · ${e(int(p?.secoesApuradas))}/${e(int(p?.secoesTotais))} seções</span><span class="exterior-meta">${e(sourceKind(p))} · ${e(providerName(p?.provider))} · ${e(date(p?.updatedAt))}</span>${p?.consolidationWarning ? `<span class="exterior-meta">${e(p.consolidationWarning)}</span>` : ""}</button>`;
+          return `<button type="button" class="exterior-row" data-exterior-scope="${e(l.scope)}" aria-label="Selecionar ${e(l.nome)}"><span class="exterior-name"><span class="country-code">${e(l.countryCode || "LOC")}</span>${e(l.nome)} <span aria-hidden="true">↗</span></span><span class="exterior-values"><span>${e(c.flavio.name)} ${e(pct(c.flavio.pct))} · ${e(int(c.flavio.votes))}</span><span>${e(c.lula.name)} ${e(pct(c.lula.pct))} · ${e(int(c.lula.votes))}</span></span>${voteBar(p, true)}<span class="exterior-meta">Δ ${e(int(c.diff))} votos · ${e(pct(progress(p)))} apurado · ${e(int(p?.secoesApuradas))}/${e(int(p?.secoesTotais))} seções</span><span class="exterior-meta">${e(sourceKind(p))} · ${e(providerName(p?.provider))} · ${e(date(p?.updatedAt))}</span>${p?.consolidationWarning ? `<span class="exterior-meta">${e(p.consolidationWarning)}</span>` : ""}</button>`;
         })
         .join("")
     : `<div class="empty-state"><span class="empty-symbol" aria-hidden="true">◎</span><h3>Nenhum ${state.tab === "pais" ? "país" : "município"} disponível</h3><p>${e(state.locationsError || "A fonte ainda não retornou locais verificáveis para esta aba. Nenhuma localidade foi criada pelo painel.")}</p></div>`;
 }
 let chartPoints = [];
 function renderHistory(history) {
+  if (
+    state.year !== 2026 ||
+    state.turn !== 2 ||
+    state.pair.join(",") !== "22,13"
+  )
+    history = {
+      points: [],
+      error:
+        "Histórico desta comparação não disponível; nenhuma série de outra eleição foi reutilizada.",
+    };
   const points = historyPoints(history?.points);
   chartPoints = points;
   const min = points[0]?.at || Date.now() - 3600000,
@@ -494,14 +614,6 @@ async function refresh() {
     refreshAgain = true;
     return;
   }
-  if (!API_BASE_URL) {
-    renderResult(
-      unavailable(
-        "API indisponível no GitHub Pages: defina VITE_API_BASE_URL apontando para o backend/proxy externo.",
-      ),
-    );
-    return;
-  }
   refreshing = true;
   controller = new AbortController();
   const current = revision,
@@ -548,11 +660,12 @@ async function refresh() {
   }
 }
 async function refreshDetails() {
-  if (snapshotBusy || !API_BASE_URL) return;
+  if (snapshotBusy) return;
   snapshotBusy = true;
   snapshotController = new AbortController();
   const signal = snapshotController.signal,
-    provider = state.provider;
+    provider = state.provider,
+    detailRevision = revision;
   const fetchResult = async (scope) => {
     try {
       return await getJSON("/api/results", { scope, provider }, signal);
@@ -621,7 +734,7 @@ async function refreshDetails() {
         await Promise.all(
           scopes.slice(i, i + 3).map(async (scope) => {
             const data = await fetchResult(scope);
-            if (provider === state.provider)
+            if (provider === state.provider && detailRevision === revision)
               state.exteriorResults.set(scope, data);
           }),
         );
@@ -635,7 +748,8 @@ async function refreshDetails() {
         await Promise.all(
           STATES.slice(i, i + 3).map(async (s) => {
             const data = await fetchResult(`estado:${s.uf}`);
-            if (provider === state.provider) state.snapshots.set(s.uf, data);
+            if (provider === state.provider && detailRevision === revision)
+              state.snapshots.set(s.uf, data);
           }),
         );
         renderMap();
@@ -651,6 +765,141 @@ async function refreshDetails() {
     snapshotBusy = false;
   }
 }
+function syncCandidateOptions(result) {
+  const list = Array.isArray(result.candidatos) ? result.candidatos : [];
+  const numbered = list.filter((c) => c.numero);
+  if (!numbered.length) {
+    for (const [id, index] of [
+      ["leftCandidateSelect", 0],
+      ["rightCandidateSelect", 1],
+    ])
+      $(id).innerHTML =
+        `<option value="${state.pair[index]}">${index === 0 ? (state.year === 2022 ? "Jair Bolsonaro" : "Flávio Bolsonaro") : "Lula"}</option>`;
+  }
+
+  if (numbered.length) {
+    for (const [id, index] of [
+      ["leftCandidateSelect", 0],
+      ["rightCandidateSelect", 1],
+    ]) {
+      const select = $(id);
+      select.innerHTML = numbered
+        .map(
+          (c) =>
+            `<option value="${e(c.numero)}">${e(c.candidato)} (${e(c.numero)})</option>`,
+        )
+        .join("");
+      if (!numbered.some((c) => c.numero === state.pair[index]))
+        state.pair[index] = numbered[index]?.numero || numbered[0].numero;
+      select.value = state.pair[index];
+    }
+    setComparisonNumbers(state.pair);
+  }
+  $("allCandidates").innerHTML = list.length
+    ? "<h2>Todos os candidatos · " +
+      e(electionFor(state.year, state.turn).label) +
+      '</h2><div class="candidate-table">' +
+      list
+        .map(
+          (c) =>
+            `<div><strong>${e(c.candidato)}</strong><span>${e(c.partido || "")} ${e(c.numero || "")}</span><b>${e(pct(c.percentual))}</b><span>${e(int(c.votos))} votos</span></div>`,
+        )
+        .join("") +
+      "</div>"
+    : "";
+  $("allCandidates").hidden = !list.length;
+  $("dataMode").textContent =
+    electionFor(state.year, state.turn).label +
+    " · " +
+    (API_BASE_URL ? "Backend configurado" : "Dados publicados do site");
+}
+function changeElection() {
+  state.year = Number($("yearSelect").value);
+  state.turn = Number($("turnSelect").value);
+  state.pair = ["22", "13"];
+  setComparisonNumbers(state.pair);
+  revision++;
+  controller?.abort();
+  snapshotController?.abort();
+  state.snapshots.clear();
+  state.exteriorResults.clear();
+  state.sourceComparisons = [];
+  state.locations = [];
+  state.updates = [];
+  state.lastSnapshot =
+    state.lastExterior =
+    state.lastLocations =
+    state.lastSourceComparison =
+      0;
+  renderMap();
+  renderRegions();
+  renderExterior();
+  renderHistory(null);
+  $("allCandidates").hidden = true;
+  document.querySelector(".page-heading .eyebrow").textContent =
+    `ELEIÇÕES ${state.year} / PRESIDENTE · ${state.turn}º TURNO`;
+  renderResult(unavailable("Consultando a eleição selecionada…"));
+  refresh();
+}
+$("yearSelect").addEventListener("change", changeElection);
+$("turnSelect").addEventListener("change", changeElection);
+for (const [id, index] of [
+  ["leftCandidateSelect", 0],
+  ["rightCandidateSelect", 1],
+])
+  $(id).addEventListener("change", () => {
+    const value = $(id).value;
+    const other = 1 - index;
+    if (state.pair[other] === value) state.pair[other] = state.pair[index];
+    state.pair[index] = value;
+    setComparisonNumbers(state.pair);
+    if (state.result) renderResult(state.result);
+    renderMap();
+    renderRegions();
+    renderExterior();
+    renderHistory(state.history);
+  });
+$("apiUrlInput").value = API_BASE_URL || "";
+function configureAPI(value) {
+  try {
+    if (value) {
+      const url = new URL(value);
+      if (
+        !["https:", "http:"].includes(url.protocol) ||
+        url.username ||
+        url.password
+      )
+        throw new Error("Use uma URL HTTP(S) sem credenciais.");
+      if (location.protocol === "https:" && url.protocol !== "https:")
+        throw new Error("Este site requer backend HTTPS.");
+      value = url.href.replace(/\/+$/, "");
+    }
+    API_BASE_URL = value || null;
+    if (!API_BASE_URL) {
+      state.provider = "auto";
+      $("providerSelect").value = "auto";
+    }
+    try {
+      if (value) localStorage.setItem("voto-api-url", value);
+      else localStorage.setItem("voto-api-url", "published");
+    } catch (error) {
+      $("apiConfigStatus").textContent =
+        "Conexão aplicada somente nesta sessão.";
+    }
+    $("apiConfigStatus").textContent = value
+      ? "Conexão salva neste navegador."
+      : "Usando os dados publicados junto com o site.";
+    $("apiUrlInput").value = value || "";
+    changeElection();
+  } catch (error) {
+    $("apiConfigStatus").textContent = error.message;
+  }
+}
+$("apiConfigForm").addEventListener("submit", (event) => {
+  event.preventDefault();
+  configureAPI($("apiUrlInput").value.trim());
+});
+$("usePublishedBtn").addEventListener("click", () => configureAPI(""));
 $("stateSelect").innerHTML = STATES.map(
   (s) =>
     `<option value="${s.uf}">${e(s.name)} · ${s.uf.toUpperCase()}</option>`,
@@ -738,8 +987,8 @@ $("exteriorSources").addEventListener("click", (event) => {
   const provider = event.target.closest("[data-exterior-provider]")?.dataset
     .exteriorProvider;
   if (!provider) return;
-  state.provider = provider;
-  $("providerSelect").value = provider;
+  state.provider = provider === "historical-archive" ? "auto" : provider;
+  $("providerSelect").value = state.provider;
   state.lastSnapshot = state.lastExterior = 0;
   state.snapshots.clear();
   state.exteriorResults.clear();
