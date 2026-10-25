@@ -142,6 +142,7 @@ const providerName = (p) =>
     tse: "TSE oficial",
     "eleicoes-feed": "Feed independente",
     "placar-do-voto": "Placar do Voto",
+    "cnn-brasil": "CNN Brasil · painel baseado no TSE",
     "historical-archive": "Acervo histórico · TSE derivado",
   })[p] || "Indisponível";
 const sourceKind = (p) =>
@@ -529,7 +530,7 @@ function visibleLocations() {
 }
 function renderSourceComparison() {
   $("exteriorSources").innerHTML = state.sourceComparisons.length
-    ? '<p class="footnote">Exterior · fontes independentes, sem somar totalizações</p>' +
+    ? '<p class="footnote">Exterior · fontes separadas, sem somar totalizações</p>' +
       state.sourceComparisons
         .map(
           (p) =>
@@ -787,7 +788,11 @@ async function refreshDetails() {
       }
       state.lastLocations = Date.now();
     }
-    if (Date.now() - state.lastSourceComparison > 30000) {
+    if (state.year !== 2026 || state.turn !== 2) {
+      state.sourceComparisons = [];
+      state.sourcesError = null;
+      renderSourceComparison();
+    } else if (Date.now() - state.lastSourceComparison > 30000) {
       try {
         const data = await getJSON(
           "/api/sources",

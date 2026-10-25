@@ -9,12 +9,14 @@ import { parseScope } from "./scope.mjs";
 import { fetchTse } from "./tse.mjs";
 import { fetchEleicoesFeed, fetchEleicoesHistory } from "./eleicoesFeed.mjs";
 import { fetchPlacar, fetchPlacarHistory } from "./placarDoVoto.mjs";
+import { fetchCnnAbroad } from "./cnnBrasil.mjs";
 import { fetchWithPolicy } from "../lib/http-cache.mjs";
 
 export const PROVIDER_LABELS = {
   tse: "TSE oficial",
   "eleicoes-feed": "Feed independente baseado no TSE",
   "placar-do-voto": "Placar do Voto (independente)",
+  "cnn-brasil": "CNN Brasil · painel baseado no TSE",
   unavailable: "Dados indisponíveis",
   "historical-archive": "Acervo histórico · TSE derivado",
 };
@@ -32,6 +34,7 @@ async function byName(provider, scope, fetchImpl) {
     );
   if (provider === "eleicoes-feed") return fetchEleicoesFeed(scope, fetchImpl);
   if (provider === "placar-do-voto") return fetchPlacar(scope, fetchImpl);
+  if (provider === "cnn-brasil") return fetchCnnAbroad(scope, fetchImpl);
   return buildUnavailable(
     "unavailable",
     "",
@@ -76,7 +79,7 @@ export async function getNormalizedResult({
   let awaitingOfficial = null;
   const chain =
     provider === "auto"
-      ? ["tse", "eleicoes-feed", "placar-do-voto"]
+      ? ["tse", "eleicoes-feed", "placar-do-voto", "cnn-brasil"]
       : [provider];
   for (const name of chain) {
     const result = await byName(name, scope, fetchImpl);
@@ -298,7 +301,7 @@ export async function getLocations(fetchImpl = fetch, country = null) {
 export async function getSourceResults({ scopeRaw, fetchImpl = fetch }) {
   const scope = parseScope(scopeRaw);
   const sources = await Promise.all(
-    ["tse", "eleicoes-feed", "placar-do-voto"].map(async (name) => ({
+    ["tse", "eleicoes-feed", "placar-do-voto", "cnn-brasil"].map(async (name) => ({
       ...withLabel(await byName(name, scope, fetchImpl)),
       scope: scopeRaw,
     })),

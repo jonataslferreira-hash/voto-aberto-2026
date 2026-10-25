@@ -1,0 +1,23 @@
+[
+  {
+    "uf": "zz",
+    "updated_at": "2026-10-25T18:10:00-03:00",
+    "status": "p",
+    "resume": {
+      "valid": { "total": 13800, "total_formated": "13.800", "percent": "94.20" },
+      "counted_ballot_box": { "total": 71, "percent": "35.5" }
+    },
+    "candidates": [
+      {
+        "number": 22,
+        "ballot_name": "Flávio Bolsonaro",
+        "votes": { "total": 7200, "total_formated": "7.200", "percent": "52.17" }
+      },
+      {
+        "number": 13,
+        "ballot_name": "Lula",
+        "votes": { "total": 6600, "total_formated": "6.600", "percent": "47.83" }
+      }
+    ]
+  }
+]

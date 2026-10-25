@@ -15,7 +15,8 @@ Executada em 25/10/2026 com Node 24.19.0, npm 11.9.0 e Chromium do ambiente.
 | Consulta por país                                                        | Austrália: feed independente, 0/29 seções; nenhum voto publicado na resposta consultada       |
 | Descoberta de localidades                                                | 160 registros publicados: países e cidades dos destaques                                      |
 | Histórico ao vivo do exterior                                            | Vazio; indisponibilidade explicitada, sem linha inventada                                     |
-| G1, UOL e CNN                                                            | Acesso às páginas eleitorais bloqueado pelo proxy (CONNECT HTTP 403); integração não validada |
+| G1/CNN                                                                        | Páginas de apuração acessíveis; os JSONs dos CDNs foram bloqueados pelo proxy (CONNECT HTTP 403) |
+| UOL                                                                            | Nenhum feed estruturado de exterior validado                                              |
 | Publicação/merge                                                         | Não executados; requer backend público e configuração de build para dados no Pages            |
 
 Os testes de navegador incluem produção servida no subpath, API ausente/inacessível, dados parciais, percentuais nulos, modos, seleção por mapa/select, seleção de país/cidade, histórico vazio/com lacunas, tooltip por foco, sanitização de texto, fonte independente sem etiqueta de vitória, cancelamento de resposta antiga, imagens locais, fallback e comparação de provedores.
@@ -33,6 +34,16 @@ Os testes de navegador incluem produção servida no subpath, API ausente/inaces
 ![Cenário de teste no celular](screenshots/mobile-test.png)
 
 A configuração reutilizável da nuvem foi salva em rascunho (`install_script`, `start_skill`, domínios necessários). Isso não comprova publicação ou restauração do snapshot em uma tarefa nova.
+
+## Pesquisa e integração do painel CNN
+
+- Inspecionada a [página de apuração da CNN](https://www.cnnbrasil.com.br/eleicoes/2026/apuracao/br/segundo-turno/). O código público do painel define os arquivos como `{ano}/{turno}t/{escopo}/{UF}/{cargo}.json`; o cliente busca `resume` e consome `uf`, `updated_at`, `candidates[].votes` e `resume.counted_ballot_box`.
+- Conectado o feed do exterior geral do CDN CNN como quarta fonte; o fallback mantém TSE → feed Eleições 2026 Brasil → Placar → CNN e seleciona uma resposta única. A CNN credita o TSE; o rótulo informa que é cópia do painel e o adaptador não sugere boletins independentes.
+- O painel G1 acessível contém URLs JSON de mapa/panorama nacional e estadual. Não foi encontrado contrato por país/ZZ, então esses dados não preenchem exterior. O UOL não expôs feed estruturado validável.
+- Fixtures artificiais exercitam o contrato CNN no parser e fallback; nenhuma fixture é lida na aplicação publicada. **O JSON real da CNN não foi validado** porque o host CDN respondeu CONNECT HTTP 403. Os hosts `djwnrcncpvp8z.cloudfront.net`, `d1a8dzcgf30rae.cloudfront.net`, `s.glbimg.com`, `s3.glbimg.com` e `storage.googleapis.com` foram salvos no rascunho de egress, que ainda requer publicação nas configurações de ambiente.
+- A página CNN indicava início da apuração às 17h de Brasília; no momento da inspeção (25/10/2026, 12h22 Brasília), TSE, feed e Placar ainda retornavam 0 seções para ZZ. Logo não havia resultados publicados para confirmar naquele instante.
+
+Após o adaptador CNN: `npm test` — 45 testes passaram; `npm run build` concluiu; `npm run verify:pages` — 3 verificações passaram; `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium npm run test:e2e` — 28 testes passaram. No total, 76 verificações/testes passaram sem falha. A consulta real do JSON CNN segue pendente da liberação de rede; os testes de parser usam somente fixture de teste.
 
 ## Atualização: Pages sem backend e eleições históricas
 

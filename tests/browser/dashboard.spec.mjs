@@ -372,6 +372,8 @@ test("2022 apresenta os dois turnos, candidatos corretos e origem histórica exp
   await expect(
     page.locator(".candidate--blue .portrait-fallback"),
   ).toBeVisible();
+  await page.locator('[data-main-scope="exterior"]').click();
+  await expect(page.locator("#exteriorSources .source-chip")).toHaveCount(0);
 });
 
 test("URL do backend pode ser configurada e removida no navegador", async ({
