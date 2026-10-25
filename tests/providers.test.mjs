@@ -229,6 +229,39 @@ test("histórico nacional nunca é reutilizado para uma UF", async () => {
   assert.match(result.diagnostics[0].message, /nacional/);
 });
 
+test("histórico G1 recupera a série publicada do primeiro turno e candidatos individuais", async () => {
+  const { getHistoryResponse } = await import("../src/providers/index.mjs");
+  let requested;
+  const payload = {
+    MAPAS: [
+      { DT_TOTALIZACAO: "2026-10-04T17:21:16", CANDIDATOS: [
+        { n: "22", pvap: "48,85" }, { n: "13", pvap: "42,50" }, { n: "70", pvap: "3,07" },
+      ] },
+      { DT_TOTALIZACAO: "2026-10-04T17:22:09", CANDIDATOS: [
+        { n: "22", pvap: "48,89" }, { n: "13", pvap: "42,46" }, { n: "70", pvap: "3,08" },
+      ] },
+    ],
+  };
+  const result = await getHistoryResponse({
+    scopeRaw: "brasil",
+    provider: "auto",
+    year: 2026,
+    turn: 1,
+    window: "all",
+    fetchImpl: async (url) => {
+      requested = String(url);
+      return jsonResponse(payload);
+    },
+  });
+  assert.match(requested, /s\.glbimg\.com\/jo\/el\/2026\/apuracao\/1-turno\/marcha-apuracao\/HISTORICO_EXECUTIVO_PRESIDENTE_BR\.JSON$/);
+  assert.equal(result.provider, "g1-history");
+  assert.equal(result.sourceKind, "independent-tse-derived");
+  assert.equal(result.points.length, 2);
+  assert.equal(result.points[0].candidatePercents["70"], 3.07);
+  assert.equal(result.points[0].flavioPercent, null);
+  assert.equal(result.points[0].at, "2026-10-04T20:21:16.000Z");
+});
+
 test("exterior automático pode mostrar parcial independente quando TSE ainda não começou", async () => {
   const tse = await fixture("tse-current");
   tse.cdabr = "zz";

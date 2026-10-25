@@ -26,7 +26,7 @@ const normalized = {
 };
 async function api(
   page,
-  { result = normalized, history = [], locations = [], includeElection = true } = {},
+  { result = normalized, history = [], historyProvider = "eleicoes-feed", locations = [], includeElection = true } = {},
 ) {
   await page.route("http://127.0.0.1:4199/**", async (route) => {
     const url = new URL(route.request().url());
@@ -43,7 +43,7 @@ async function api(
       });
     else if (url.pathname === "/api/history")
       await route.fulfill({
-        json: { points: history, provider: "eleicoes-feed" },
+        json: { points: history, provider: historyProvider, sourceKind: "independent-tse-derived" },
       });
     else if (url.pathname === "/api/sources")
       await route.fulfill({
@@ -271,7 +271,7 @@ test("histórico acompanha os dois candidatos escolhidos no primeiro turno", asy
   await page.locator("#turnSelect").selectOption("1");
   await page.locator("#leftCandidateSelect").selectOption("70");
   await page.locator("#rightCandidateSelect").selectOption("13");
-  await expect(page.locator("#windowSelect")).toBeDisabled();
+  await expect(page.locator("#windowSelect")).toBeEnabled();
   await expect(page.locator("#historyLegendFlavio")).toHaveText("Augusto Cury");
   await expect(page.locator("#historyLegendLula")).toHaveText("Lula");
   await expect(page.locator('[data-series="left"]')).toHaveAttribute("d", /^M/);
@@ -412,15 +412,44 @@ test("primeiro turno publicado lista todos os candidatos e permite comparação 
     )
     .toBe("#3195ff");
 });
-test("histórico de 2026 no primeiro turno mostra o resultado final real, sem fingir série temporal", async ({ page }) => {
+test("Pages sem backend carrega a série histórica arquivada do G1 no primeiro turno", async ({ page }) => {
   await page.goto("http://127.0.0.1:4174/voto-aberto-2026/");
   await page.locator("#turnSelect").selectOption("1");
-  await expect(page.locator("#historyTitle")).toHaveText("Resultado final · 1º turno");
-  await expect(page.locator("#historyChart .chart-point")).toHaveCount(2);
-  await expect(page.locator("#historySource")).toContainText("TSE oficial");
-  await expect(page.locator("#historyNote")).toContainText("este ponto não representa uma série temporal");
-  await expect(page.locator("#windowSelect")).toBeDisabled();
+  await expect(page.locator("#historyTitle")).toHaveText("Evolução da apuração · 1º turno");
+  await expect(page.locator("#historySource")).toHaveText("G1 · arquivo histórico baseado no TSE");
+  await expect.poll(() => page.locator("#historyChart .chart-point").count()).toBeGreaterThan(2);
+  await expect(page.locator("#historyNote")).toContainText("Atualizações históricas publicadas pelo G1");
+  await expect(page.locator("#windowSelect")).toBeEnabled();
   await expect(page.locator("#historyChart")).not.toContainText("Aguardando a primeira atualização válida");
+});
+test("G1 desenha evolução de primeiro turno para qualquer par selecionado", async ({ page }) => {
+  const start = Date.now() - 120000;
+  const firstTurn = {
+    ...normalized,
+    candidatos: [
+      { numero: "70", candidato: "Augusto Cury", votos: 120, percentual: 12 },
+      { numero: "13", candidato: "Lula", votos: 500, percentual: 50 },
+      { numero: "22", candidato: "Flávio Bolsonaro", votos: 380, percentual: 38 },
+    ],
+  };
+  await api(page, {
+    result: firstTurn,
+    historyProvider: "g1-history",
+    history: [
+      { at: new Date(start).toISOString(), candidatePercents: { "70": 2.5, "13": 45 } },
+      { at: new Date(start + 60000).toISOString(), candidatePercents: { "70": 2.7, "13": 44.9 } },
+      { at: new Date(start + 120000).toISOString(), candidatePercents: { "70": 2.9, "13": 45.16 } },
+    ],
+  });
+  await ready(page);
+  await page.locator("#turnSelect").selectOption("1");
+  await page.locator("#leftCandidateSelect").selectOption("70");
+  await page.locator("#rightCandidateSelect").selectOption("13");
+  await expect(page.locator("#historyTitle")).toHaveText("Evolução da apuração · 1º turno");
+  await expect(page.locator("#historySource")).toHaveText("G1 · histórico baseado no TSE");
+  await expect(page.locator('[data-series="left"]')).toHaveAttribute("d", /L/);
+  await expect(page.locator('[data-series="right"]')).toHaveAttribute("d", /L/);
+  await expect(page.locator("#windowSelect")).toBeEnabled();
 });
 test("lista de 2026 é ordenada por votos e apresenta retratos licenciados", async ({ page }) => {
   await page.goto("http://127.0.0.1:4174/voto-aberto-2026/");
@@ -433,6 +462,26 @@ test("lista de 2026 é ordenada por votos e apresenta retratos licenciados", asy
   await expect(rows.nth(3)).toContainText("RENAN SANTOS");
   await expect(rows.nth(5)).toContainText("ZEMA");
   await expect(rows.nth(2).locator("img")).toHaveAttribute("src", /2026-70-/);
+});
+test("retratos de todos os candidatos de 2026 e 2022 são PNGs recortados sem fundo retangular", async ({ page }) => {
+  await page.goto("http://127.0.0.1:4174/voto-aberto-2026/");
+  for (const [year, count] of [["2026", 12], ["2022", 11]]) {
+    await page.locator("#yearSelect").selectOption(year);
+    await page.locator("#turnSelect").selectOption("1");
+    const images = page.locator("#allCandidates .candidate-rank-row img");
+    await expect(images).toHaveCount(count);
+    const transparentRatios = await images.evaluateAll(async (nodes) => Promise.all(nodes.map(async (image) => {
+      await image.decode();
+      const canvas = document.createElement("canvas");
+      canvas.width = image.naturalWidth; canvas.height = image.naturalHeight;
+      const context = canvas.getContext("2d"); context.drawImage(image, 0, 0);
+      const data = context.getImageData(0, 0, canvas.width, canvas.height).data;
+      let transparent = 0;
+      for (let i = 3; i < data.length; i += 4) if (data[i] < 8) transparent++;
+      return transparent / (canvas.width * canvas.height);
+    })));
+    expect(transparentRatios.every((ratio) => ratio > 0.1)).toBe(true);
+  }
 });
 test("retrato do Renan não mantém os grandes blocos do fundo original", async ({ page }) => {
   await page.goto("http://127.0.0.1:4174/voto-aberto-2026/");

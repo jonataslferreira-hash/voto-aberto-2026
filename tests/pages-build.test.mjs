@@ -36,3 +36,14 @@ test("bundle permite dados publicados sem API e inclui arquivo real", async () =
   );
   assert.ok(published.elections["2026-1"].results.br.candidatos.length > 2);
 });
+
+test("Pages inclui a série G1 arquivada do 1º turno com origem e pontos completos", async () => {
+  const archive = JSON.parse(
+    await readFile(path.join(distDir, "data/history-2026-1-br.json"), "utf8"),
+  );
+  assert.equal(archive.provider, "g1-history");
+  assert.match(archive.sourceUrl, /^https:\/\/s\.glbimg\.com\/jo\/el\/2026\/apuracao\/1-turno\//);
+  assert.equal(archive.scope, "brasil");
+  assert.ok(archive.points.length > 300);
+  assert.ok(Object.hasOwn(archive.points.at(-1).candidatePercents, "70"));
+});

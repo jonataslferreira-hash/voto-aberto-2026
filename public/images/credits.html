@@ -98,12 +98,11 @@
   <section>
     <h2>Tratamento aplicado</h2>
     <p>
-      As fotografias JPEG originais dos candidatos estão preservadas. As cópias
-      PNG com canal alpha tiveram o fundo removido por preenchimento conectado
-      iniciado nos cantos, com tolerância de cor de 8%; os pixels do retrato
-      mantidos não foram gerados nem repintados. Essa técnica também é aplicada
-      aos retratos de candidatura de 2022 e 2026 incluídos neste repositório.
-      Não se usam rostos gerados no painel.
+      As fotografias JPEG originais dos candidatos estão preservadas. Os vinte
+      retratos complementares (dez de 2022 e dez de 2026) foram recortados
+      novamente como PNG com canal alpha usando segmentação GrabCut e máscaras
+      de contorno. Os pixels RGB coincidem com os JPEGs originais; somente o
+      canal alpha foi refeito. Não se usam rostos gerados no painel.
     </p>
     <p>
       O recorte muda apenas a transparência do fundo e das bordas; as fotos JPEG
@@ -115,13 +114,11 @@
       servidos localmente; não há dependência de CDN de imagens.
     </p>
     <p>
-      Neste ajuste, as máscaras alpha dos dez retratos de 2022 e dos dez
-      retratos complementares de 2026 tiveram uma contração uniforme de borda
-      e um feather leve para reduzir halos claros. Os pixels RGB das fotografias
-      foram preservados integralmente. Flávio e Lula mantêm seus PNGs próprios.
-      O fundo que permanecia junto à silhueta no retrato pequeno de Renan Santos
-      foi removido com uma máscara alpha manual baseada no contorno visível; os
-      pixels da foto não foram apagados ou retocados.
+      As máscaras receberam contração leve e feather para reduzir halos claros.
+      Augusto Cury, Renan Santos, Zema e os demais candidatos usam o mesmo
+      tratamento; fundos que não puderam ser separados com segurança permanecem
+      indisponíveis em vez de serem substituídos por ilustrações. Flávio e Lula
+      mantêm seus PNGs próprios.
       A lista de candidatos continua condicionada aos registros que a fonte
       publica para a eleição e o turno escolhidos.
     </p>

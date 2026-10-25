@@ -211,6 +211,9 @@ export function historyPoints(points) {
       at: Date.parse(p.at),
       flavio: percent(p.flavioPercent),
       lula: percent(p.lulaPercent),
+      candidates: Object.fromEntries(
+        Object.entries(p.candidatePercents || {}).map(([number, value]) => [number, percent(value)]),
+      ),
     }))
     .filter((p) => Number.isFinite(p.at))
     .sort((a, b) => a.at - b.at);

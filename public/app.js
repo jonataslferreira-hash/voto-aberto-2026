@@ -157,6 +157,7 @@ const state = {
   lastSourceComparison: 0,
   sourceComparisons: [],
   historyArchive: null,
+  publishedHistory: null,
 };
 const MAX_LOCAL_HISTORY_POINTS = 720;
 function numberForCandidate(candidate) {
@@ -233,9 +234,27 @@ const providerName = (p) =>
     "eleicoes-feed": "Feed independente",
     "placar-do-voto": "Placar do Voto",
     "cnn-brasil": "CNN Brasil · painel baseado no TSE",
+    "g1-history": "G1 · histórico baseado no TSE",
     "historical-archive": "Acervo histórico · TSE derivado",
   })[p] || "Indisponível";
 let electionArchivePromise = null;
+let firstRoundHistoryPromise = null;
+function loadFirstRoundHistory() {
+  firstRoundHistoryPromise ??= fetch(`${import.meta.env.BASE_URL}data/history-2026-1-br.json`, {
+    cache: "no-cache",
+  }).then(async (response) => {
+    if (!response.ok) throw new Error(`Histórico do G1 indisponível (HTTP ${response.status}).`);
+    const data = await response.json();
+    if (data.schemaVersion !== 1 || data.year !== 2026 || data.turn !== 1 ||
+      data.provider !== "g1-history" || !Array.isArray(data.points))
+      throw new Error("Arquivo histórico do G1 inválido.");
+    return data;
+  }).catch((error) => {
+    firstRoundHistoryPromise = null;
+    throw error;
+  });
+  return firstRoundHistoryPromise;
+}
 function loadElectionArchive() {
   electionArchivePromise ??= fetch(`${import.meta.env.BASE_URL}data/results.json`, {
     cache: "no-cache",
@@ -782,6 +801,22 @@ function chooseWorldCountry(event) {
 let chartPoints = [];
 function renderHistory(history) {
   const selected = candidates(state.result);
+  const publishedHistoryKey = `2026:1:${state.scope}`;
+  if (state.year === 2026 && state.turn === 1 && state.scope === "brasil" &&
+      state.publishedHistory?.key !== publishedHistoryKey) {
+    state.publishedHistory = { key: publishedHistoryKey, points: null, error: null };
+    loadFirstRoundHistory().then((archive) => {
+      if (state.year !== 2026 || state.turn !== 1 || state.scope !== "brasil" ||
+        state.publishedHistory?.key !== publishedHistoryKey) return;
+      state.publishedHistory = { key: publishedHistoryKey, ...archive };
+      renderHistory(state.history);
+    }).catch((error) => {
+      console.warn("Não foi possível abrir o histórico publicado do G1:", error.message);
+      if (state.publishedHistory?.key !== publishedHistoryKey) return;
+      state.publishedHistory = { key: publishedHistoryKey, points: [], error: error.message };
+      renderHistory(state.history);
+    });
+  }
   const hasArchivedFinal = state.year === 2022 || (state.year === 2026 && state.turn === 1);
   const archiveKey = `${state.year}:${state.turn}:${state.scope}:${state.pair.join(",")}`;
   if (hasArchivedFinal && state.historyArchive?.key !== archiveKey) {
@@ -833,10 +868,27 @@ function renderHistory(history) {
   const archive = hasArchivedFinal && state.historyArchive?.key === archiveKey
     ? state.historyArchive
     : null;
+  const publishedHistory = state.publishedHistory?.key === publishedHistoryKey
+    ? state.publishedHistory
+    : null;
   const archivedRoundSeries = state.year === 2022 && Array.isArray(archive?.points);
-  const archivedSingleRound = state.year === 2026 && state.turn === 1 && Array.isArray(archive?.points);
-  $("historyEyebrow").textContent = archivedRoundSeries || archivedSingleRound ? "RESULTADOS FINAIS ARQUIVADOS" : "EVOLUÇÃO DA DISPUTA";
-  $("historyTitle").textContent = archivedRoundSeries ? "Comparação entre os turnos" : archivedSingleRound ? "Resultado final · 1º turno" : "Histórico de votos";
+  const liveG1History = history?.provider === "g1-history" &&
+    Array.isArray(history.points) && history.points.length > 0;
+  const staticG1History = Array.isArray(publishedHistory?.points) && publishedHistory.points.length > 0;
+  const temporalFirstRound = state.year === 2026 && state.turn === 1 &&
+    (liveG1History || staticG1History);
+  const archivedSingleRound = state.year === 2026 && state.turn === 1 &&
+    Array.isArray(archive?.points) && !temporalFirstRound;
+  $("historyEyebrow").textContent = archivedRoundSeries
+    ? "RESULTADOS FINAIS ARQUIVADOS"
+    : temporalFirstRound
+      ? "SÉRIE HISTÓRICA G1 · BASEADA NO TSE"
+      : archivedSingleRound ? "RESULTADOS FINAIS ARQUIVADOS" : "EVOLUÇÃO DA DISPUTA";
+  $("historyTitle").textContent = archivedRoundSeries
+    ? "Comparação entre os turnos"
+    : temporalFirstRound
+      ? "Evolução da apuração · 1º turno"
+      : archivedSingleRound ? "Resultado final · 1º turno" : "Histórico de votos";
   $("windowSelect").disabled = archivedRoundSeries || archivedSingleRound;
   $("windowSelect").value = archivedRoundSeries || archivedSingleRound ? "all" : state.window;
   const localPoints = state.year === 2026
@@ -846,30 +898,42 @@ function renderHistory(history) {
         right: Number.isFinite(sample.values[state.pair[1]]) ? sample.values[state.pair[1]] : null,
       }))
     : [];
-  const remoteAllowed =
-    state.year === 2026 &&
-    state.turn === 2 &&
-    new Set(state.pair).size === 2 &&
-    state.pair.includes("22") &&
-    state.pair.includes("13");
+  const firstRoundPoints = liveG1History ? history.points : staticG1History ? publishedHistory.points : [];
+  const remoteAllowed = state.year === 2026 && (
+    (state.turn === 1 && firstRoundPoints.length > 0) ||
+    (state.turn === 2 && new Set(state.pair).size === 2 &&
+      state.pair.includes("22") && state.pair.includes("13"))
+  );
   const remotePoints = remoteAllowed
-    ? historyPoints(history?.points).map((point) => ({
+    ? historyPoints(state.turn === 1 ? firstRoundPoints : history?.points).map((point) => ({
         at: point.at,
-        left: state.pair[0] === "22" ? point.flavio : point.lula,
-        right: state.pair[1] === "22" ? point.flavio : point.lula,
+        left: Object.hasOwn(point.candidates || {}, state.pair[0])
+          ? point.candidates[state.pair[0]]
+          : state.pair[0] === "22" ? point.flavio : state.pair[0] === "13" ? point.lula : null,
+        right: Object.hasOwn(point.candidates || {}, state.pair[1])
+          ? point.candidates[state.pair[1]]
+          : state.pair[1] === "22" ? point.flavio : state.pair[1] === "13" ? point.lula : null,
       }))
     : [];
-  const remoteFiltered = filterHistoryWindow(remotePoints, state.window);
-  const points = archivedRoundSeries || archivedSingleRound
+  const remoteFiltered = filterHistoryWindow(
+    remotePoints,
+    state.window,
+    temporalFirstRound && remotePoints.length ? remotePoints.at(-1).at : Date.now(),
+  );
+  const points = archivedRoundSeries
     ? archive.points
-    : remoteFiltered.length
-    ? remoteFiltered
-    : filterHistoryWindow(localPoints, state.window);
-  const localSelected = !remoteFiltered.length && localPoints.length > 0;
+    : temporalFirstRound
+      ? remoteFiltered
+      : remoteFiltered.length
+        ? remoteFiltered
+        : archivedSingleRound ? archive.points : filterHistoryWindow(localPoints, state.window);
+  const localSelected = !temporalFirstRound && !remoteFiltered.length && localPoints.length > 0;
   const chartHistoryError =
-    state.year === 2022 || (state.year === 2026 && state.turn === 1)
+      state.year === 2022 || archivedSingleRound || temporalFirstRound
       ? archive?.error
         ? `Não foi possível abrir os resultados finais do acervo: ${archive.error}`
+        : temporalFirstRound
+          ? !points.length ? "O G1 não tem pontos publicados nesta janela." : null
         : !(archivedRoundSeries || archivedSingleRound)
           ? "Carregando os resultados finais arquivados desta eleição."
           : !points.length
@@ -931,6 +995,10 @@ function renderHistory(history) {
   $("historyLegendLula").parentElement.querySelector(".dot").style.backgroundColor = series[1].color;
   $("historySource").textContent = archivedRoundSeries
     ? "Acervo histórico independente · TSE derivado"
+    : temporalFirstRound
+    ? liveG1History
+      ? providerName(history?.provider)
+      : "G1 · arquivo histórico baseado no TSE"
     : archivedSingleRound
     ? `${providerName(archive?.provider)} · resultado final arquivado`
     : remoteFiltered.length
@@ -940,6 +1008,8 @@ function renderHistory(history) {
       : "Fonte sem série disponível";
   $("historyNote").textContent = archivedRoundSeries && points.length
     ? "Percentuais finais reais do 1º e do 2º turno, por localidade. O acervo não guarda a evolução horária da apuração; candidato ausente em um turno permanece como lacuna."
+    : temporalFirstRound && points.length
+    ? `Atualizações históricas publicadas pelo G1 (${points.length} pontos) para esta localidade. Os percentuais vêm do painel baseado no TSE; lacunas permanecem vazias.`
     : archivedSingleRound && points.length
     ? "Percentuais finais publicados do 1º turno nesta localidade. O acervo não guarda a evolução horária da apuração; este ponto não representa uma série temporal."
     : localSelected && points.length
@@ -949,11 +1019,11 @@ function renderHistory(history) {
       : "Lacunas permanecem vazias. Nenhum valor é estimado.");
   $("chartTooltip").hidden = true;
 }
-function filterHistoryWindow(points, windowKey) {
+function filterHistoryWindow(points, windowKey, anchor = Date.now()) {
   if (windowKey === "all") return points.slice().sort((a, b) => a.at - b.at);
   const horizon = windowKey === "1h" ? 3600000 : 10800000;
-  const min = Date.now() - horizon;
-  return points.filter((point) => point.at >= min && point.at <= Date.now()).sort((a, b) => a.at - b.at);
+  const min = anchor - horizon;
+  return points.filter((point) => point.at >= min && point.at <= anchor).sort((a, b) => a.at - b.at);
 }
 function tooltip(event) {
   const node = event.target.closest("[data-point]");
@@ -1282,8 +1352,10 @@ function changeElection() {
   resetEventContext();
   state.year = Number($("yearSelect").value);
   state.turn = Number($("turnSelect").value);
+  if (state.year === 2026 && state.turn === 1) state.window = "all";
   state.pair = ["22", "13"];
   setComparisonNumbers(state.pair);
+  $("windowSelect").value = state.window;
   revision++;
   controller?.abort();
   snapshotController?.abort();
