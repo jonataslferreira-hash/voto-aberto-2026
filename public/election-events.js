@@ -117,6 +117,7 @@ export function createEventTracker() {
         celebrated.add(winKey);
         return {
           kind: "victory",
+          year: Number(result.year),
           number: String(winner.numero),
           name: winner.candidato,
           color:
@@ -140,6 +141,7 @@ export function createEventTracker() {
       ) {
         return {
           kind: "lead",
+          year: Number(result.year),
           number: leader.number,
           name: leader.name,
           color: c.leader,
@@ -156,15 +158,15 @@ export function createEventTracker() {
 function outcomeKey(winner) {
   return winner ? String(winner.numero) : null;
 }
-export function soundNotes(number, kind = "lead") {
+export function soundNotes(number, kind = "lead", year = 2026, name = "") {
   const root =
     String(number) === "22"
-      ? 392
+      ? Number(year) === 2022 || /jair/i.test(name) ? 294 : 392
       : String(number) === "13"
         ? 330
         : 262 + ((Number(number) || 0) % 12) * 16;
   const intervals = String(number) === "13" ? [1, 1.2, 1.5] : [1, 1.25, 1.5];
-  return (kind === "victory" ? [...intervals, 2, 1.5, 2] : intervals).map(
+  return (kind === "victory" || kind === "local-result" ? [...intervals, 2, 1.5, 2] : intervals).map(
     (ratio, index) => ({
       frequency: root * ratio,
       start: index * (kind === "victory" ? 0.18 : 0.13),

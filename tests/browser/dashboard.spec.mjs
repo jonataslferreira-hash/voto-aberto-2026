@@ -100,8 +100,20 @@ for (const width of [1440, 1280, 768, 390, 360])
           .map((n) => n.outerHTML),
       );
     expect(invalid).toEqual([]);
-    const left = await page.locator(".candidate--blue").boundingBox(),
-      right = await page.locator(".candidate--red").boundingBox();
+    const leftCandidate = page.locator("#heroTotals .candidate--blue"),
+      rightCandidate = page.locator("#heroTotals .candidate--red");
+    await expect(leftCandidate).toBeVisible();
+    await expect(rightCandidate).toBeVisible();
+    await expect
+      .poll(async () =>
+        Boolean(
+          (await leftCandidate.boundingBox()) &&
+            (await rightCandidate.boundingBox()),
+        ),
+      )
+      .toBe(true);
+    const left = await leftCandidate.boundingBox(),
+      right = await rightCandidate.boundingBox();
     expect(width <= 550 ? left.y < right.y : left.x < right.x).toBe(true);
     expect(errors).toEqual([]);
     await page.screenshot({
@@ -335,9 +347,46 @@ test("primeiro turno publicado lista todos os candidatos e permite comparação 
   await expect(page.locator(".candidate--blue h2")).toContainText(
     alternative.name.split(" (")[0],
   );
-  await expect(
-    page.locator(".candidate--blue .portrait-fallback"),
-  ).toBeVisible();
+  await expect(page.locator(".candidate--blue .portrait-photo")).toHaveAttribute(
+    "src",
+    /2026-/,
+  );
+  await page.locator("#leftCandidateSelect").selectOption("13");
+  await expect
+    .poll(() =>
+      page.locator(".candidate--blue").evaluate((node) =>
+        node.style.getPropertyValue("--candidate-accent"),
+      ),
+    )
+    .toBe("#ff405d");
+  await page.locator("#rightCandidateSelect").selectOption("22");
+  await expect
+    .poll(() =>
+      page.locator(".candidate--red").evaluate((node) =>
+        node.style.getPropertyValue("--candidate-accent"),
+      ),
+    )
+    .toBe("#3195ff");
+});
+test("lista de 2026 é ordenada por votos e apresenta retratos licenciados", async ({ page }) => {
+  await page.goto("http://127.0.0.1:4174/voto-aberto-2026/");
+  await page.locator("#turnSelect").selectOption("1");
+  const rows = page.locator("#allCandidates .candidate-table>div");
+  await expect(rows).toHaveCount(12);
+  await expect(rows.nth(0)).toContainText("FLAVIO BOLSONARO");
+  await expect(rows.nth(1)).toContainText("LULA");
+  await expect(rows.nth(2)).toContainText("ESCRITOR AUGUSTO CURY");
+  await expect(rows.nth(3)).toContainText("RENAN SANTOS");
+  await expect(rows.nth(5)).toContainText("ZEMA");
+  await expect(rows.nth(2).locator("img")).toHaveAttribute("src", /2026-70-/);
+});
+test("exterior do segundo turno de 2026 mostra a espera oficial do TSE sem estimativas", async ({ page }) => {
+  await page.goto("http://127.0.0.1:4174/voto-aberto-2026/");
+  await page.locator("#turnSelect").selectOption("2");
+  await page.locator('[data-main-scope="exterior"]').click();
+  await expect(page.locator("#exteriorContent")).toContainText("aguardando a apuração do 2º turno");
+  await expect(page.locator("#exteriorContent")).toContainText("0 de 1.351 seções");
+  await expect(page.locator("#exteriorContent")).not.toContainText("0,00%");
 });
 test("2022 apresenta os dois turnos, candidatos corretos e origem histórica explícita", async ({
   page,
@@ -359,6 +408,12 @@ test("2022 apresenta os dois turnos, candidatos corretos e origem histórica exp
   await expect(page.locator("#notice")).toContainText(
     "Arquivo histórico independente",
   );
+  await page.locator("#turnSelect").selectOption("2");
+  await page.locator('[data-main-scope="exterior"]').click();
+  await expect(page.locator("#exteriorContent")).toContainText("152.905");
+  await expect(page.locator("#exteriorContent")).toContainText("145.264");
+  await expect(page.locator("#exteriorContent")).toContainText("Acervo histórico");
+  await page.locator('[data-main-scope="brasil"]').click();
   await page.locator("#turnSelect").selectOption("1");
   await expect(page.locator("#allCandidates .candidate-table>div")).toHaveCount(
     11,
@@ -563,14 +618,16 @@ test("fundo por trás dos PNGs ocupa 75/25 e fica neutro sem percentuais", async
   let current = eventResult(75, 25);
   await eventAPI(page, () => current);
   await ready(page);
-  await expect(page.locator("#heroColorBlue")).toHaveAttribute(
-    "style",
-    "width: 75%;",
-  );
-  await expect(page.locator("#heroColorRed")).toHaveAttribute(
-    "style",
-    "width: 25%;",
-  );
+  await expect
+    .poll(() =>
+      page.locator("#heroColorBlue").evaluate((el) => el.style.width),
+    )
+    .toBe("75%");
+  await expect
+    .poll(() =>
+      page.locator("#heroColorRed").evaluate((el) => el.style.width),
+    )
+    .toBe("25%");
   await expect
     .poll(() =>
       page
@@ -595,10 +652,11 @@ test("fundo por trás dos PNGs ocupa 75/25 e fica neutro sem percentuais", async
     "data-valid",
     "false",
   );
-  await expect(page.locator("#heroColorBlue")).toHaveAttribute(
-    "style",
-    "width: 0%;",
-  );
+  await expect
+    .poll(() =>
+      page.locator("#heroColorBlue").evaluate((el) => el.style.width),
+    )
+    .toBe("0%");
 });
 test("viradas têm sinais distintos, sem alerta inicial, com áudio só após ativação e retorno automático", async ({
   page,

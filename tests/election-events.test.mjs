@@ -145,6 +145,7 @@ test("sons diferenciam candidatos e vitória, com frequências válidas", () => 
   assert.ok(
     soundNotes("13", "victory").length > soundNotes("13", "lead").length,
   );
+  assert.notDeepEqual(soundNotes("22", "victory", 2022, "Jair Bolsonaro"), soundNotes("22", "victory", 2026, "Flávio Bolsonaro"));
   for (const number of ["13", "22", "12"])
     for (const note of soundNotes(number, "victory"))
       assert.ok(

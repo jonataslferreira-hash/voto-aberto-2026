@@ -120,6 +120,8 @@ b {
 }
 .dashboard {
   --split: 50%;
+  --left-color: #3195ff;
+  --right-color: #ff405d;
   position: relative;
   isolation: isolate;
   min-height: 100vh;
@@ -133,14 +135,7 @@ b {
   z-index: -2;
   background:
     linear-gradient(180deg, rgba(9, 13, 22, 0.55), rgba(9, 13, 22, 0.9)),
-    linear-gradient(
-      90deg,
-      #123968 0%,
-      #102b50 calc(var(--split) - 15%),
-      #32253e var(--split),
-      #5e1f36 calc(var(--split) + 15%),
-      #421c2e 100%
-    );
+    linear-gradient(90deg, color-mix(in srgb, var(--left-color) 32%, #090d16) 0%, color-mix(in srgb, var(--left-color) 20%, #090d16) var(--split), #090d16 var(--split), color-mix(in srgb, var(--right-color) 20%, #090d16) 100%);
   transition: opacity 1s;
   opacity: 1;
   pointer-events: none;
@@ -1764,11 +1759,10 @@ h1 {
       linear-gradient(180deg, #090d1644, #090d16cc 80%),
       linear-gradient(
         90deg,
-        #023f98 0%,
-        #06254b calc(var(--split) - 20%),
+        color-mix(in srgb, var(--left-color) 48%, #090d16) 0%,
+        color-mix(in srgb, var(--left-color) 20%, #090d16) var(--split),
         #0a0b12 var(--split),
-        #511323 calc(var(--split) + 20%),
-        #8b0923 100%
+        color-mix(in srgb, var(--right-color) 45%, #090d16) 100%
       );
   }
   .hero-stage .candidate:before {
@@ -2794,4 +2788,66 @@ h1 {
 }
 .hero-color-field[data-valid="true"] .hero-color--red {
   width: calc(100% - var(--split)) !important;
+}
+
+/* Candidate identity colors follow the candidate when the comparison sides change. */
+.candidate[style*="--candidate-accent"] .candidate-kicker b {
+  border-color: color-mix(in srgb, var(--candidate-accent) 38%, transparent);
+  background: color-mix(in srgb, var(--candidate-accent) 14%, transparent);
+  color: color-mix(in srgb, var(--candidate-accent) 62%, white);
+}
+.candidate[style*="--candidate-accent"] .candidate__pct {
+  color: var(--candidate-accent);
+  text-shadow: 0 0 32px color-mix(in srgb, var(--candidate-accent) 23%, transparent);
+}
+.candidate[style*="--candidate-accent"] .candidate-progress i {
+  background: var(--candidate-accent);
+}
+.hero-stage .candidate:before {
+  content: attr(data-watermark);
+  color: color-mix(in srgb, var(--candidate-accent) 8%, transparent);
+}
+.vote-track .blue,
+.vote-track .red {
+  background: linear-gradient(90deg, color-mix(in srgb, var(--candidate-color) 68%, #101a28), var(--candidate-color));
+  box-shadow: 0 0 12px color-mix(in srgb, var(--candidate-color) 25%, transparent);
+}
+.hero-color--blue {
+  background: linear-gradient(100deg, color-mix(in srgb, var(--left-color) 85%, transparent), color-mix(in srgb, var(--left-color) 48%, transparent));
+}
+.hero-color--red {
+  background: linear-gradient(100deg, color-mix(in srgb, var(--right-color) 48%, transparent), color-mix(in srgb, var(--right-color) 85%, transparent));
+}
+.candidate-table > .candidate-rank-row {
+  grid-template-columns: 24px 34px minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 6px 8px;
+}
+.candidate-rank-row img,
+.candidate-rank-placeholder {
+  width: 30px;
+  height: 40px;
+  object-fit: cover;
+  object-position: center 20%;
+  border-radius: 5px;
+  filter: grayscale(1) contrast(1.08);
+  background: #101b2b;
+}
+.candidate-rank-placeholder {
+  display: grid;
+  place-items: center;
+  color: #8291a8;
+  font-size: 12px;
+}
+.candidate-rank-row .candidate-rank {
+  color: #a9bad1;
+  font-size: 11px;
+}
+@media (max-width: 550px) {
+  .candidate-table > .candidate-rank-row {
+    grid-template-columns: 20px 28px minmax(0, 1fr) auto;
+  }
+  .candidate-rank-row > span:nth-last-child(1) {
+    grid-column: 3 / -1;
+  }
 }
