@@ -2345,3 +2345,120 @@ h1 {
     stroke-width: 3;
   }
 }
+.election-controls {
+  display: flex;
+  align-items: end;
+  gap: 15px;
+  flex-wrap: wrap;
+  padding: 14px 18px;
+  margin: 0 0 15px;
+}
+.election-controls label,
+.api-config label {
+  display: grid;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 11px;
+  min-width: 0;
+}
+.election-controls select {
+  max-width: 230px;
+}
+.election-controls #dataMode {
+  font-size: 10px;
+  margin-left: auto;
+  align-self: center;
+}
+.api-config {
+  display: flex;
+  gap: 10px;
+  align-items: end;
+  flex-wrap: wrap;
+  width: 100%;
+}
+.api-config input {
+  min-height: 36px;
+  background: #141c2b;
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 7px;
+  padding: 7px;
+  width: min(340px, 100%);
+}
+.api-config p {
+  width: 100%;
+  font-size: 11px;
+}
+.settings {
+  flex-wrap: wrap;
+}
+.all-candidates {
+  padding: 17px 20px;
+  margin: 14px 0;
+}
+.all-candidates h2 {
+  font-size: 14px;
+  margin-bottom: 12px;
+}
+.candidate-table {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+.candidate-table > div {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 3px 12px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+}
+.candidate-table strong {
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.candidate-table span {
+  font-size: 10px;
+  color: var(--muted);
+}
+.candidate-table b {
+  color: #b9d0ef;
+}
+.mode-simple .all-candidates {
+  display: none;
+}
+@media (max-width: 800px) {
+  .candidate-table {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .election-controls label {
+    flex: 1 1 40%;
+  }
+  .election-controls select {
+    width: 100%;
+    max-width: none;
+  }
+  .election-controls #dataMode {
+    width: 100%;
+    margin: 0;
+  }
+}
+@media (max-width: 550px) {
+  .candidate-table {
+    grid-template-columns: 1fr;
+  }
+  .election-controls {
+    gap: 10px;
+    padding: 12px;
+  }
+  .election-controls select {
+    font-size: 10px;
+  }
+  .api-config {
+    align-items: start;
+    flex-direction: column;
+  }
+  .api-config label {
+    width: 100%;
+  }
+}

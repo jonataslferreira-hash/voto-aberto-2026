@@ -60,13 +60,37 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (url.pathname === "/api/results") {
+    if (
+      !["2022", "2026"].includes(url.searchParams.get("year") || "2026") ||
+      !["1", "2"].includes(url.searchParams.get("turn") || "2")
+    )
+      return json(res, 400, { error: "Ano/turno não suportado." });
     const payload = await getNormalizedResult({
       scopeRaw: url.searchParams.get("scope") || "brasil",
       provider: url.searchParams.get("provider") || "auto",
+      year: url.searchParams.get("year") || 2026,
+      turn: url.searchParams.get("turn") || 2,
     });
     return json(res, 200, payload);
   }
 
+  if (
+    ["/api/history", "/api/locations", "/api/sources"].includes(url.pathname) &&
+    ((url.searchParams.get("year") || "2026") !== "2026" ||
+      (url.searchParams.get("turn") || "2") !== "2")
+  ) {
+    return json(res, 200, {
+      points: [],
+      locations: [],
+      sources: [],
+      error: "Detalhamento não disponível para o ano/turno selecionado.",
+      diagnostics: [
+        {
+          message: "Este serviço detalhado cobre somente 2026, segundo turno.",
+        },
+      ],
+    });
+  }
   if (url.pathname === "/api/history") {
     const payload = await getHistoryResponse({
       scopeRaw: url.searchParams.get("scope") || "brasil",

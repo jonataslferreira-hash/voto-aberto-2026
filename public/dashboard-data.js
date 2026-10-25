@@ -50,6 +50,10 @@ export const pct = (value) =>
   percent(value) === null
     ? "—"
     : `${value.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`;
+let selectedNumbers = ["22", "13"];
+export function setComparisonNumbers(numbers) {
+  selectedNumbers = numbers.map(String);
+}
 export function candidates(payload) {
   const list =
     payload?.sourceKind === "unavailable"
@@ -57,11 +61,34 @@ export function candidates(payload) {
       : Array.isArray(payload?.candidatos)
         ? payload.candidatos
         : [];
-  const get = (pattern) => {
-    const c = list.find((c) => pattern.test(c.candidato || ""));
-    return { votes: count(c?.votos), pct: percent(c?.percentual) };
+  const get = (number, index) => {
+    const c =
+      list.find((c) => String(c.numero) === number) ||
+      list.find((c) =>
+        number === "22"
+          ? /fl[aá]vio|jair|bolsonaro/i.test(c.candidato || "")
+          : number === "13"
+            ? /lula/i.test(c.candidato || "")
+            : false,
+      );
+    return {
+      votes: count(c?.votos),
+      pct: percent(c?.percentual),
+      name:
+        c?.candidato ||
+        (number === "22"
+          ? payload?.year === 2022
+            ? "Jair Bolsonaro"
+            : "Flávio Bolsonaro"
+          : number === "13"
+            ? "Lula"
+            : `Candidato ${number}`),
+      number,
+      party: c?.partido || "Partido não informado",
+    };
   };
-  return { flavio: get(/fl[aá]vio/i), lula: get(/lula/i) };
+  const pair = payload?.comparisonNumbers || selectedNumbers;
+  return { flavio: get(pair[0], 0), lula: get(pair[1], 1) };
 }
 export function comparison(payload) {
   const { flavio, lula } = candidates(payload);

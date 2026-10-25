@@ -1,3 +1,5 @@
+import { readFile } from "node:fs/promises";
+import { electionFor } from "../../public/elections.js";
 import {
   getFeaturedLocations,
   getPublishedLocations,
@@ -14,10 +16,20 @@ export const PROVIDER_LABELS = {
   "eleicoes-feed": "Feed independente baseado no TSE",
   "placar-do-voto": "Placar do Voto (independente)",
   unavailable: "Dados indisponíveis",
+  "historical-archive": "Acervo histórico · TSE derivado",
 };
 
 async function byName(provider, scope, fetchImpl) {
-  if (provider === "tse") return fetchTse(scope, fetchImpl);
+  if (provider === "tse") return fetchTse(scope, fetchImpl, scope.election);
+  if (
+    scope.election &&
+    (scope.election.year !== 2026 || scope.election.turn !== 2)
+  )
+    return buildUnavailable(
+      provider,
+      "",
+      "Este provedor não possui contrato validado para o ano/turno selecionado.",
+    );
   if (provider === "eleicoes-feed") return fetchEleicoesFeed(scope, fetchImpl);
   if (provider === "placar-do-voto") return fetchPlacar(scope, fetchImpl);
   return buildUnavailable(
@@ -31,9 +43,35 @@ export async function getNormalizedResult({
   scopeRaw,
   provider = "auto",
   fetchImpl = fetch,
+  year = 2026,
+  turn = 2,
 }) {
-  const scope = parseScope(scopeRaw);
+  const scope = { ...parseScope(scopeRaw), election: electionFor(year, turn) };
 
+  if (Number(year) === 2022 && provider === "auto") {
+    try {
+      const archive = JSON.parse(
+        await readFile(
+          new URL("../../static/data/results.json", import.meta.url),
+          "utf8",
+        ),
+      );
+      const result = archive.elections[`2022-${turn}`]?.results[scope.uf];
+      if (!scope.city && result?.provider === "historical-archive")
+        return {
+          ...withLabel(result),
+          scope: scopeRaw,
+          year: Number(year),
+          turn: Number(turn),
+          diagnostics: [],
+        };
+    } catch (error) {
+      console.warn(
+        "Acervo histórico local não disponível:",
+        error.code || error.name,
+      );
+    }
+  }
   const diagnostics = [];
   let awaitingOfficial = null;
   const chain =
@@ -55,6 +93,8 @@ export async function getNormalizedResult({
       return {
         ...withLabel(result),
         scope: scopeRaw || "brasil",
+        year: Number(year),
+        turn: Number(turn),
         diagnostics,
         ...(awaitingOfficial
           ? {
@@ -71,7 +111,13 @@ export async function getNormalizedResult({
     });
   }
   if (awaitingOfficial)
-    return { ...withLabel(awaitingOfficial), scope: scopeRaw, diagnostics };
+    return {
+      ...withLabel(awaitingOfficial),
+      scope: scopeRaw,
+      year: Number(year),
+      turn: Number(turn),
+      diagnostics,
+    };
   return {
     ...withLabel(
       buildUnavailable(
@@ -81,6 +127,8 @@ export async function getNormalizedResult({
       ),
     ),
     scope: scopeRaw || "brasil",
+    year: Number(year),
+    turn: Number(turn),
     diagnostics,
   };
 }

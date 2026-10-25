@@ -80,3 +80,21 @@ test("escape de texto externo e números decimais não inventam casas", () => {
   assert.equal(toNumber(" "), null);
   assert.equal(toNumber(false), null);
 });
+
+test("comparação por número suporta Jair e outros candidatos sem usar retrato/nome de Flávio", async () => {
+  const { candidates } = await import("../public/dashboard-data.js");
+  const result = {
+    year: 2022,
+    comparisonNumbers: ["12", "15"],
+    candidatos: [
+      { numero: "12", candidato: "CIRO GOMES", votos: 10, percentual: 10 },
+      { numero: "15", candidato: "SIMONE TEBET", votos: 20, percentual: 20 },
+    ],
+  };
+  assert.equal(candidates(result).flavio.name, "CIRO GOMES");
+  assert.equal(candidates(result).lula.name, "SIMONE TEBET");
+  assert.equal(
+    candidates({ year: 2022, candidatos: [] }).flavio.name,
+    "Jair Bolsonaro",
+  );
+});

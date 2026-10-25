@@ -5,6 +5,8 @@ on:
     branches:
       - main
   workflow_dispatch:
+  schedule:
+    - cron: "*/15 * * * *"
 
 permissions:
   contents: read
@@ -44,6 +46,9 @@ jobs:
         run: npm run test:e2e
         env:
           VITE_API_BASE_URL: ""
+
+      - name: Refresh published official results
+        run: npm run data:refresh
 
       - name: Build static site
         run: npm run build

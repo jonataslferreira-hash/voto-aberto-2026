@@ -104,24 +104,18 @@ for (const width of [1440, 1280, 768, 390, 360])
       fullPage: true,
     });
   });
-test("sem API configurada usa estado neutro e não consulta dados", async ({
+test("sem API usa dados publicados reais com horário e sem erro de configuração", async ({
   page,
 }) => {
-  let calls = 0;
-  page.on("request", (r) => {
-    if (r.url().includes("/api/")) calls++;
-  });
   await page.goto("http://127.0.0.1:4174/voto-aberto-2026/");
-  await expect(page.locator("#notice")).toContainText(
-    "API indisponível no GitHub Pages",
+  await expect(page.locator("#connection")).toContainText("Dados publicados");
+  await expect(page.locator("#notice")).toContainText("Dados publicados");
+  await expect(page.locator("#notice")).not.toContainText(
+    "defina VITE_API_BASE_URL",
   );
-  await expect(page.locator("#app")).toHaveAttribute(
-    "data-gradient",
-    "neutral",
-  );
-  await expect(page.locator(".candidate__votes").first()).toContainText("—");
-  expect(calls).toBe(0);
+  await expect(page.locator("#heroSource")).toContainText("TSE oficial");
 });
+
 test("API inacessível expõe Failed to fetch sem votos fictícios", async ({
   page,
 }) => {
@@ -250,9 +244,7 @@ test("artefato de produção no subpath carrega retratos locais e créditos", as
   page,
 }) => {
   await page.goto("http://127.0.0.1:4175/voto-aberto-2026/");
-  await expect(page.locator("#notice")).toContainText(
-    "API indisponível no GitHub Pages",
-  );
+  await expect(page.locator("#connection")).toContainText("Dados publicados");
   await expect(page.locator(".portrait-photo")).toHaveCount(2);
   await expect
     .poll(() =>
@@ -318,4 +310,97 @@ test("comparação do exterior preserva fontes separadas e permite escolher prov
   await page.locator('[data-exterior-provider="eleicoes-feed"]').click();
   await expect(page.locator("#providerSelect")).toHaveValue("eleicoes-feed");
   await expect(page.locator("#scopeLabel")).toHaveText("Exterior · geral");
+});
+
+test("primeiro turno publicado lista todos os candidatos e permite comparação diferente", async ({
+  page,
+}) => {
+  await page.goto("http://127.0.0.1:4174/voto-aberto-2026/");
+  await page.locator("#turnSelect").selectOption("1");
+  await expect(page.locator("#allCandidates .candidate-table>div")).toHaveCount(
+    12,
+  );
+  const options = await page
+    .locator("#leftCandidateSelect option")
+    .evaluateAll((nodes) =>
+      nodes.map((n) => ({ value: n.value, name: n.textContent })),
+    );
+  const alternative = options.find((o) => !["22", "13"].includes(o.value));
+  await page.locator("#leftCandidateSelect").selectOption(alternative.value);
+  await expect(page.locator(".candidate--blue h2")).toContainText(
+    alternative.name.split(" (")[0],
+  );
+  await expect(
+    page.locator(".candidate--blue .portrait-fallback"),
+  ).toBeVisible();
+});
+test("2022 apresenta os dois turnos, candidatos corretos e origem histórica explícita", async ({
+  page,
+}) => {
+  await page.goto("http://127.0.0.1:4174/voto-aberto-2026/");
+  await page.locator("#yearSelect").selectOption("2022");
+  await expect(page.locator("#resultStatus")).toHaveText(
+    "Totalização finalizada",
+  );
+  await expect(page.locator("#allCandidates .candidate-table>div")).toHaveCount(
+    2,
+  );
+  await expect(page.locator(".candidate--blue h2")).toHaveText(
+    "JAIR BOLSONARO",
+  );
+  await expect(page.locator(".candidate--red .candidate__votes")).toContainText(
+    "60.345.999",
+  );
+  await expect(page.locator("#notice")).toContainText(
+    "Arquivo histórico independente",
+  );
+  await page.locator("#turnSelect").selectOption("1");
+  await expect(page.locator("#allCandidates .candidate-table>div")).toHaveCount(
+    11,
+  );
+  await expect(
+    page.locator(".candidate--blue .candidate__votes"),
+  ).toContainText("51.072.345");
+  await expect(page.locator(".candidate--red .candidate__votes")).toContainText(
+    "57.259.504",
+  );
+  await expect(
+    page.locator(".candidate--blue .portrait-fallback"),
+  ).toBeVisible();
+});
+
+test("URL do backend pode ser configurada e removida no navegador", async ({
+  page,
+}) => {
+  await api(page);
+  await page.goto("http://127.0.0.1:4174/voto-aberto-2026/");
+  await page
+    .getByRole("button", { name: "Configurações", exact: true })
+    .click();
+  await page.locator("#apiUrlInput").fill("http://127.0.0.1:4199");
+  await page
+    .getByRole("button", { name: "Salvar conexão", exact: true })
+    .click();
+  await expect(page.locator("#connection")).toContainText("API conectada");
+  await page.reload();
+  await expect(page.locator("#connection")).toContainText("API conectada");
+  await page
+    .getByRole("button", { name: "Configurações", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "Usar dados publicados do site", exact: true })
+    .click();
+  await expect(page.locator("#connection")).toContainText("Dados publicados");
+});
+
+test("backend antigo sem confirmação do turno não exibe eleição incorreta", async ({
+  page,
+}) => {
+  await api(page);
+  await ready(page);
+  await page.locator("#turnSelect").selectOption("1");
+  await expect(page.locator("#notice")).toContainText(
+    "Backend não confirmou o ano/turno solicitado",
+  );
+  await expect(page.locator(".candidate__votes").first()).toContainText("—");
 });

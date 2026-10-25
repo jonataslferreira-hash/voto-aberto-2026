@@ -76,6 +76,19 @@
         hidden
         aria-label="Configurações do painel"
       >
+        <form id="apiConfigForm" class="api-config">
+          <label
+            >URL do backend (opcional)<input
+              id="apiUrlInput"
+              type="url"
+              placeholder="https://seu-backend.exemplo.com"
+              aria-describedby="apiConfigStatus" /></label
+          ><button type="submit" class="text-btn">Salvar conexão</button
+          ><button type="button" id="usePublishedBtn" class="text-btn">
+            Usar dados publicados do site
+          </button>
+          <p id="apiConfigStatus" role="status"></p>
+        </form>
         <label
           >Fonte de dados<select id="providerSelect">
             <option value="auto">Automático · prioridade TSE</option>
@@ -104,6 +117,34 @@
           ><span>Dados abertos. Informação transparente.</span>
         </div>
       </div>
+      <section
+        class="election-controls panel"
+        aria-label="Escolher eleição e comparação"
+      >
+        <label
+          >Ano<select id="yearSelect">
+            <option value="2026">2026</option>
+            <option value="2022">2022</option>
+          </select></label
+        >
+        <label
+          >Turno<select id="turnSelect">
+            <option value="1">1º turno</option>
+            <option value="2" selected>2º turno</option>
+          </select></label
+        >
+        <label
+          >Comparar à esquerda<select id="leftCandidateSelect">
+            <option value="22">Flávio Bolsonaro</option>
+          </select></label
+        >
+        <label
+          >Comparar à direita<select id="rightCandidateSelect">
+            <option value="13">Lula</option>
+          </select></label
+        >
+        <span id="dataMode" class="muted">Consultando dados publicados</span>
+      </section>
       <section class="scope-strip" aria-label="Localidade selecionada">
         <div class="scope-title">
           <span class="scope-icon" aria-hidden="true">◎</span
@@ -149,6 +190,11 @@
         </div>
       </section>
       <div id="notice" class="notice" role="status"></div>
+      <section
+        id="allCandidates"
+        class="panel all-candidates"
+        aria-label="Todos os candidatos"
+      ></section>
 
       <div class="complete-content">
         <section class="detail-grid" aria-label="Resultados por localidade">

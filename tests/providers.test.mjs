@@ -291,3 +291,62 @@ test("comparação retorna três fontes separadas, sem criar quarta totalizaçã
   assert.equal(result.aggregation, "none");
   assert.equal(result.candidatos, undefined);
 });
+
+test("eleição e turno selecionam endpoints distintos e preservam todos os candidatos", async () => {
+  const { electionFor, tseUrl } = await import("../public/elections.js");
+  assert.match(tseUrl(electionFor(2026, 1)), /6257.*e006257/);
+  assert.match(tseUrl(electionFor(2022, 2)), /ele2022\/545/);
+  assert.throws(() => electionFor(2024, 1));
+  const raw = await fixture("tse-current");
+  raw.carg[0].agr[0].par[0].cand.push({
+    n: "12",
+    nmu: "OUTRO CANDIDATO",
+    vap: "0",
+    pvap: "0",
+  });
+  assert.ok(
+    parseTseJson(raw, "source").candidatos.some((c) => c.numero === "12"),
+  );
+});
+test("2022 retorna o acervo identificado e não consulta endpoints de 2026", async () => {
+  let calls = 0;
+  const result = await getNormalizedResult({
+    scopeRaw: "brasil",
+    year: 2022,
+    turn: 2,
+    fetchImpl: async () => {
+      calls++;
+      throw Error("Não deve consultar rede");
+    },
+  });
+  assert.equal(calls, 0);
+  assert.equal(result.year, 2022);
+  assert.equal(result.turn, 2);
+  assert.equal(result.provider, "historical-archive");
+  assert.equal(result.sourceKind, "independent-tse-derived");
+  assert.equal(
+    result.candidatos.find((c) => c.numero === "13").votos,
+    60345999,
+  );
+  assert.equal(result.secoesTotais, null);
+});
+test("acervo histórico nacional corresponde à soma das 27 UFs e exterior nos dois turnos", async () => {
+  const { STATES } = await import("../public/dashboard-data.js");
+  const archive = JSON.parse(
+    await readFile(
+      new URL("../static/data/results.json", import.meta.url),
+      "utf8",
+    ),
+  );
+  for (const turn of [1, 2]) {
+    const data = archive.elections[`2022-${turn}`].results;
+    for (const c of data.br.candidatos) {
+      const sum = [...STATES.map((s) => s.uf), "zz"].reduce(
+        (n, uf) =>
+          n + data[uf].candidatos.find((x) => x.numero === c.numero).votos,
+        0,
+      );
+      assert.equal(c.votos, sum);
+    }
+  }
+});
