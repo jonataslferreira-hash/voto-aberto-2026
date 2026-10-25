@@ -11,7 +11,7 @@
     "dev": "node --watch src/server.mjs",
     "dev:pages": "vite",
     "build": "vite build && cp dist/index.html dist/404.html && touch dist/.nojekyll",
-    "test": "node --test tests/providers.test.mjs tests/static-contract.test.mjs tests/dashboard-data.test.mjs tests/http-cache.test.mjs tests/server.test.mjs",
+    "test": "node --test tests/providers.test.mjs tests/static-contract.test.mjs tests/dashboard-data.test.mjs tests/http-cache.test.mjs tests/server.test.mjs tests/election-events.test.mjs tests/live-results.test.mjs",
     "verify:pages": "node --test tests/pages-build.test.mjs",
     "test:e2e": "npm run build && playwright test",
     "data:refresh": "node scripts/refresh-results.mjs",

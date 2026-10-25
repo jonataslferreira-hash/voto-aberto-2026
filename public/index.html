@@ -105,6 +105,20 @@
           Atualizar agora ↻
         </button>
       </section>
+      <section class="live-controls" aria-label="Atualização e alertas">
+        <label
+          ><input id="liveUpdatesToggle" type="checkbox" checked /> Atualização
+          ao vivo</label
+        ><button
+          id="soundToggle"
+          class="sound-toggle"
+          type="button"
+          aria-pressed="false"
+        >
+          Ativar sons</button
+        ><span id="soundStatus" class="sound-status" role="status"></span
+        ><span id="liveStatus" class="live-status">Conectando à fonte…</span>
+      </section>
       <div class="page-heading">
         <div>
           <p class="eyebrow">
@@ -173,10 +187,26 @@
         class="hero panel"
         aria-label="Resultado presidencial"
       >
+        <div
+          id="heroColorField"
+          class="hero-color-field"
+          role="img"
+          aria-label="Áreas neutras"
+          data-valid="false"
+        >
+          <div id="heroColorBlue" class="hero-color hero-color--blue"></div>
+          <div id="heroColorRed" class="hero-color hero-color--red"></div>
+        </div>
         <div class="hero-topline">
           <span>DISPUTA PRESIDENCIAL</span
           ><span id="heroUpdate">Horário da fonte não informado</span>
         </div>
+        <p
+          id="winnerConfirmation"
+          class="official-winner"
+          role="status"
+          hidden
+        ></p>
         <div class="hero-stage">
           <div id="heroTotals" class="hero-candidates"></div>
           <div class="hero-center">
@@ -388,6 +418,38 @@
       >Ative o JavaScript para consultar o painel. Nenhum resultado é exibido
       sem uma fonte válida.</noscript
     >
+    <section
+      id="electionEvent"
+      class="election-event"
+      role="status"
+      aria-labelledby="eventName"
+      aria-describedby="eventMessage"
+      hidden
+    >
+      <div class="event-particles" aria-hidden="true">
+        <i style="--i: 0"></i><i style="--i: 1"></i><i style="--i: 2"></i
+        ><i style="--i: 3"></i><i style="--i: 4"></i><i style="--i: 5"></i
+        ><i style="--i: 6"></i><i style="--i: 7"></i><i style="--i: 8"></i
+        ><i style="--i: 9"></i><i style="--i: 10"></i><i style="--i: 11"></i
+        ><i style="--i: 12"></i><i style="--i: 13"></i><i style="--i: 14"></i
+        ><i style="--i: 15"></i><i style="--i: 16"></i><i style="--i: 17"></i
+        ><i style="--i: 18"></i><i style="--i: 19"></i>
+      </div>
+      <div class="event-content">
+        <p data-event-eyebrow></p>
+        <h2 id="eventName" data-event-name></h2>
+        <strong id="eventMessage" data-event-message></strong>
+        <p data-event-context></p>
+        <a
+          data-event-source
+          href="https://resultados.tse.jus.br/"
+          target="_blank"
+          rel="noopener noreferrer"
+          >Consultar a fonte</a
+        ><button type="button" data-event-close>Voltar ao painel</button
+        ><small>Este aviso fecha automaticamente.</small>
+      </div>
+    </section>
     <script type="module" src="./app.js"></script>
   </body>
 </html>

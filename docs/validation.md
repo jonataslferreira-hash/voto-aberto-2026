@@ -44,3 +44,21 @@ A configuração reutilizável da nuvem foi salva em rascunho (`install_script`,
 - O detalhamento por país/cidade ainda requer backend e contrato correspondente; arquivos publicados incluem o total de ZZ, sem inventar países ou histórico.
 
 A rodada final desta atualização passou em **34 testes de dados/servidor, 21 testes de navegador e 3 verificações de Pages (58 no total)**. `npm ci`, build sem API e consultas HTTP reais com ano/turno também concluídos. As capturas `screenshots/2022-first-desktop.png` e `screenshots/2022-first-mobile.png` mostram os registros históricos reais do primeiro turno, com origem identificada; não usam mocks.
+
+## PNGs, consulta ao vivo e alertas
+
+Esta rodada validou **43 testes de dados/servidor, 28 testes de navegador e 3 verificações de Pages: 74 passaram, sem falhas ou testes pulados**. `npm ci` e build também concluídos.
+
+- Os dois retratos são PNGs RGBA com mais de 20% de pixels totalmente transparentes. Pixels centrais dos rostos coincidem com a fotografia original, considerando o reenquadramento documentado de Lula. Não se usam os rostos estilizados produzidos durante a obtenção das máscaras.
+- A área azul ocupa 75% e a vermelha 25% no cenário de teste, inclusive na verificação de largura efetivamente renderizada. Valores ausentes deixam ambas neutras.
+- Consulta real do endpoint TSE com Origin `https://jonataslferreira-hash.github.io`: HTTP 200 e Access-Control-Allow-Origin correspondente; cabeçalhos ETag/Last-Modified e max-age presentes. A fonte consultada ainda não havia iniciado apuração. O teste de navegador intercepta a fonte para verificar atualização após 60 segundos, coalescência e mudança de valores sem reload; não afirma ter observado uma virada eleitoral real.
+- Áudio desbloqueado por clique em Chromium, perfis distintos por candidato e eventos de virada nas duas direções. A saída de um alto-falante físico não foi medida; a reprodução depende da permissão/volume do navegador.
+- Confirmação oficial aciona o overlay, cor, foco e retorno após 8 segundos, sem repetição. Classificação ao 2º turno, histórico, primeira carga, empate, ausência e vitória independente não acionam anúncio oficial. Movimento reduzido desliga confetes. O polling do backend pode ser pausado.
+
+### Imagens de teste, não resultados reais
+
+Os dois exemplos abaixo usam **somente fixtures interceptadas pelo teste**, têm identificação de teste e não são telas de um resultado real publicado. Os PNGs dos retratos são os mesmos arquivos licenciados da aplicação.
+
+![Teste do fundo proporcional atrás dos PNGs](screenshots/png-proportional-colors-test.png)
+
+![Teste da animação de vitória, com dados controlados](screenshots/victory-animation-test.png)

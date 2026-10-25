@@ -1,65 +1,9 @@
 import { electionFor, tseUrl } from "../../public/elections.js";
-import {
-  buildNormalized,
-  buildUnavailable,
-  candidate,
-  toNumber,
-} from "../lib/model.mjs";
+import { buildUnavailable } from "../lib/model.mjs";
+import { parseTseJson } from "../../public/tse-format.js";
+export { parseTseJson } from "../../public/tse-format.js";
 import { fetchWithPolicy } from "../lib/http-cache.mjs";
 const BASE = "https://resultados.tse.jus.br/oficial/ele2026/6258/dados";
-function sourceDate(json) {
-  const date = json.dg || json.dt;
-  const time = json.hg || json.ht;
-  if (!date) return null;
-  if (!/^\d{2}\/\d{2}\/\d{4}$/.test(date)) return date;
-  const [day, month, year] = date.split("/");
-  return time ? `${year}-${month}-${day}T${time}-03:00` : null;
-}
-export function parseTseJson(json, sourceUrl) {
-  const office = json?.carg?.find((c) => String(c.cd) === "1");
-  const entries = Array.isArray(json?.cand)
-    ? json.cand
-    : office?.agr?.flatMap((a) =>
-        (a.par || []).flatMap((p) =>
-          (p.cand || []).map((c) => ({ ...c, party: p.sg })),
-        ),
-      );
-  if (!Array.isArray(entries))
-    throw new Error(
-      "Formato TSE inválido: campo cand ausente ou sem candidatos esperados.",
-    );
-  const denominator = toNumber(
-    json?.v?.vvc ?? json?.v?.vv ?? json?.vvc ?? json?.vv,
-  );
-  const candidatos = entries.map((c) => ({
-    ...candidate(
-      c.nmu || c.nm || c.name,
-      toNumber(c.vap ?? c.v ?? c.votos),
-      denominator === 0 ? null : toNumber(c.pvap ?? c.p ?? c.percentual),
-    ),
-    numero: String(c.n ?? c.nr ?? ""),
-    partido: c.party || c.cc || c.sgp || null,
-  }));
-  if (!candidatos.length)
-    throw new Error("Formato TSE inválido: candidatos esperados ausentes.");
-  return buildNormalized({
-    provider: "tse",
-    sourceUrl,
-    sourceKind: "official-tse",
-    updatedAt: sourceDate(json),
-    votosValidos: denominator,
-    secoesApuradas: toNumber(
-      json?.s?.st ??
-        json?.a?.a ??
-        (typeof json?.s === "object" ? null : json?.s) ??
-        json?.sapur,
-    ),
-    secoesTotais: toNumber(json?.s?.ts ?? json?.a?.t ?? json?.st ?? json?.stot),
-    candidatos,
-    progressPercent: toNumber(json?.s?.pst ?? json?.pst ?? json?.pvap),
-    consolidationWarning: null,
-  });
-}
 export async function fetchTse(
   scope,
   fetchImpl = fetch,
