@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Voto Aberto 2026</title>
+    <link rel="stylesheet" href="/styles.css" />
+    <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+  </head>
+  <body>
+    <main id="app" class="layout simple">
+      <header>
+        <h1>Voto Aberto 2026</h1>
+        <div class="controls">
+          <label>Modo
+            <button id="modeBtn" type="button">Completo</button>
+          </label>
+          <label>Fonte
+            <select id="providerSelect">
+              <option value="auto">Automático (prioridade)</option>
+              <option value="tse">TSE oficial</option>
+              <option value="eleicoes-feed">Feed independente</option>
+              <option value="placar-do-voto">Placar do Voto</option>
+            </select>
+          </label>
+          <label>Exterior
+            <select id="scopeSelect">
+              <option value="exterior-geral">Geral (ZZ)</option>
+            </select>
+          </label>
+          <label>Histórico
+            <select id="windowSelect">
+              <option value="1h">1h</option>
+              <option value="3h">3h</option>
+              <option value="all">Total</option>
+            </select>
+          </label>
+        </div>
+      </header>
+
+      <section id="sourceBox" class="source"></section>
+
+      <section class="scoreboard">
+        <article class="candidate blue" id="candFlavio"></article>
+        <article class="candidate red" id="candLula"></article>
+      </section>
+
+      <section class="meta" id="meta"></section>
+
+      <section class="chart" id="chartWrap">
+        <svg id="historyChart" width="100%" height="260"></svg>
+      </section>
+    </main>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>
