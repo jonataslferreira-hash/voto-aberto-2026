@@ -156,6 +156,7 @@ const state = {
   lastExterior: 0,
   lastSourceComparison: 0,
   sourceComparisons: [],
+  historyArchive: null,
 };
 const MAX_LOCAL_HISTORY_POINTS = 720;
 function numberForCandidate(candidate) {
@@ -234,6 +235,22 @@ const providerName = (p) =>
     "cnn-brasil": "CNN Brasil · painel baseado no TSE",
     "historical-archive": "Acervo histórico · TSE derivado",
   })[p] || "Indisponível";
+let electionArchivePromise = null;
+function loadElectionArchive() {
+  electionArchivePromise ??= fetch(`${import.meta.env.BASE_URL}data/results.json`, {
+    cache: "no-cache",
+  }).then(async (response) => {
+    if (!response.ok) throw new Error(`Acervo histórico indisponível (HTTP ${response.status}).`);
+    const data = await response.json();
+    if (data.schemaVersion !== 1 || !data.elections?.["2022-1"] || !data.elections?.["2022-2"])
+      throw new Error("Acervo histórico sem os dois turnos de 2022.");
+    return data;
+  }).catch((error) => {
+    electionArchivePromise = null;
+    throw error;
+  });
+  return electionArchivePromise;
+}
 const sourceKind = (p) =>
   ({
     "official-tse": "TSE oficial",
@@ -705,31 +722,108 @@ function renderExterior() {
 }
 function initWorldMap() {
   $("worldMap").innerHTML = WORLD_MAP.map((country) => {
-    const available = state.locations.some((location) => location.tipo === "country" && (location.countryCode || location.id?.toUpperCase()) === country.code);
+    const available = state.locations.some((location) => location.tipo === "country" && locationCountryCode(location) === country.code);
     return `<path d="${country.d}" class="world-country ${available ? "has-results-source" : ""}" data-country-code="${country.code}" aria-label="${e(country.name)} · ${available ? "localidade publicada pela fonte" : "sem dados publicados"}" ${available ? 'role="button" tabindex="0"' : ""}><title>${e(country.name)} · ${available ? "dados disponíveis na fonte" : "sem dados"}</title></path>`;
   }).join("");
   renderWorldMap();
 }
+function locationCountryCode(location) {
+  return String(location?.countryCode || location?.id?.split("/")[0] || "")
+    .slice(0, 2)
+    .toUpperCase();
+}
 function renderWorldMap() {
   if (!$("worldMap")) return;
   for (const node of $("worldMap").querySelectorAll(".world-country")) {
-    const location = state.locations.find((entry) => entry.tipo === "country" && (entry.countryCode || entry.id?.toUpperCase()) === node.dataset.countryCode);
+    const location = state.locations.find((entry) => entry.tipo === "country" && locationCountryCode(entry) === node.dataset.countryCode);
     const result = location ? state.exteriorResults.get(locationScope(location)) : null;
     const c = comparison(result);
-    node.classList.toggle("is-data", Boolean(result && result.sourceKind !== "unavailable"));
-    node.style.setProperty("--map-result", c.valid ? c.leader === "blue" ? candidateColor(c.flavio.number, state.year) : c.leader === "red" ? candidateColor(c.lula.number, state.year) : "#b99dff" : "#31435a");
+    const hasValidVotes = Boolean(
+      result && result.sourceKind !== "unavailable" && c.valid &&
+      Number.isFinite(c.flavio.votes) && Number.isFinite(c.lula.votes) &&
+      c.flavio.votes + c.lula.votes > 0,
+    );
+    node.classList.toggle("is-data", hasValidVotes);
+    node.classList.toggle("has-results-source", Boolean(location));
+    node.style.setProperty("--map-result", hasValidVotes ? c.leader === "blue" ? candidateColor(c.flavio.number, state.year) : c.leader === "red" ? candidateColor(c.lula.number, state.year) : "#b99dff" : "#31435a");
     node.setAttribute("aria-pressed", String(Boolean(location && locationScope(location) === state.exterior)));
+    const countryName = node.querySelector("title")?.textContent.split(" · ")[0] || node.dataset.countryCode;
+    const status = !location
+      ? "sem local publicado pela fonte"
+      : !hasValidVotes
+        ? "local publicado; aguardando votos válidos"
+        : c.leader === "tie"
+          ? "empate em votos"
+          : `${c.leader === "blue" ? c.flavio.name : c.lula.name} na frente`;
+    node.setAttribute("aria-label", `${countryName} · ${status}`);
+    node.querySelector("title").textContent = `${countryName} · ${status}`;
   }
-  $("worldMapCount").textContent = `Países com resultados: ${[...$("worldMap").querySelectorAll(".world-country.is-data")].length}`;
+  const available = [...$("worldMap").querySelectorAll(".world-country.has-results-source")].length;
+  const withVotes = [...$("worldMap").querySelectorAll(".world-country.is-data")].length;
+  $("worldMapCount").textContent = `${withVotes} com votos · ${available} disponíveis`;
+  $("worldMapStatus").textContent = available
+    ? withVotes
+      ? `${withVotes} país(es) têm percentuais válidos. Os demais tons azulados indicam localidades publicadas sem votos válidos ainda.`
+      : `${available} país(es) foram publicados pela fonte, mas nenhum tem percentuais e votos válidos nesta consulta. O mapa permanece neutro até haver resultados.`
+    : state.locationsError
+      ? `A lista de países não pôde ser carregada: ${state.locationsError}`
+      : "A fonte ainda não publicou localidades por país; nenhum país está disponível para seleção.";
 }
 function chooseWorldCountry(event) {
   const code = event.target.closest("[data-country-code]")?.dataset.countryCode;
-  const location = state.locations.find((entry) => entry.tipo === "country" && (entry.countryCode || entry.id?.toUpperCase()) === code);
+  const location = state.locations.find((entry) => entry.tipo === "country" && locationCountryCode(entry) === code);
   if (location) selectScope("exterior", locationScope(location));
 }
 let chartPoints = [];
 function renderHistory(history) {
   const selected = candidates(state.result);
+  const archiveKey = `2022:${state.scope}:${state.pair.join(",")}`;
+  if (state.year === 2022 && state.historyArchive?.key !== archiveKey) {
+    state.historyArchive = { key: archiveKey, points: null, error: null };
+    loadElectionArchive().then((archive) => {
+      if (state.year !== 2022 || state.historyArchive?.key !== archiveKey) return;
+      const scopeKey = state.scope === "brasil"
+        ? "br"
+        : state.scope === "exterior-geral"
+          ? "zz"
+          : state.scope.startsWith("estado:")
+            ? state.scope.slice("estado:".length).toLowerCase()
+            : null;
+      const resultFor = (turn) =>
+        scopeKey ? archive.elections[`2022-${turn}`]?.results?.[scopeKey] : null;
+      const valueFor = (result, number) => {
+        const candidate = result?.candidatos?.find((entry) => String(entry.numero) === number);
+        return Number.isFinite(candidate?.percentual) && candidate.percentual >= 0 && candidate.percentual <= 100
+          ? candidate.percentual
+          : null;
+      };
+      const first = resultFor(1);
+      const second = resultFor(2);
+      const points = [
+        { at: Date.UTC(2022, 9, 2), label: "1º turno", left: valueFor(first, state.pair[0]), right: valueFor(first, state.pair[1]) },
+        { at: Date.UTC(2022, 9, 30), label: "2º turno", left: valueFor(second, state.pair[0]), right: valueFor(second, state.pair[1]) },
+      ];
+      state.historyArchive = {
+        key: archiveKey,
+        points,
+        provider: first?.provider || second?.provider || "historical-archive",
+      };
+      renderHistory(state.history);
+    }).catch((error) => {
+      console.warn("Não foi possível carregar os resultados finais do acervo de 2022:", error.message);
+      if (state.year !== 2022 || state.historyArchive?.key !== archiveKey) return;
+      state.historyArchive = { key: archiveKey, points: [], error: error.message };
+      renderHistory(state.history);
+    });
+  }
+  const archive = state.year === 2022 && state.historyArchive?.key === archiveKey
+    ? state.historyArchive
+    : null;
+  const archivedRoundSeries = state.year === 2022 && Array.isArray(archive?.points);
+  $("historyEyebrow").textContent = state.year === 2022 ? "RESULTADOS FINAIS DO ACERVO" : "EVOLUÇÃO DA DISPUTA";
+  $("historyTitle").textContent = state.year === 2022 ? "Comparação entre os turnos" : "Histórico de votos";
+  $("windowSelect").disabled = state.year === 2022;
+  $("windowSelect").value = state.year === 2022 ? "all" : state.window;
   const localPoints = state.year === 2026
     ? readObservations().map((sample) => ({
         at: Date.parse(sample.at),
@@ -751,13 +845,21 @@ function renderHistory(history) {
       }))
     : [];
   const remoteFiltered = filterHistoryWindow(remotePoints, state.window);
-  const points = remoteFiltered.length
+  const points = archivedRoundSeries
+    ? archive.points
+    : remoteFiltered.length
     ? remoteFiltered
     : filterHistoryWindow(localPoints, state.window);
   const localSelected = !remoteFiltered.length && localPoints.length > 0;
   const chartHistoryError =
     state.year === 2022
-      ? "A série temporal de 2022 não foi arquivada. O painel mostra os totais finais do turno sem fingir que são uma sequência ao vivo."
+      ? archive?.error
+        ? `Não foi possível abrir os resultados finais do acervo: ${archive.error}`
+        : !archivedRoundSeries
+          ? "Carregando os resultados finais arquivados dos dois turnos de 2022."
+          : !points.length
+            ? "O acervo não possui percentuais finais para este candidato e localidade."
+            : null
       : !points.length
         ? history?.error ||
           "O gráfico começa no primeiro resultado válido publicado após o fechamento de uma seção. Ainda não há ponto histórico disponível nesta sessão."
@@ -780,10 +882,12 @@ function renderHistory(history) {
   ].map((item) => ({ ...item, color: candidateColor(item.number, state.year) }));
   $("historyChart").innerHTML =
     grid +
-    [0, 0.5, 1]
+    (archivedRoundSeries
+      ? [{ at: min, label: "1º turno" }, { at: max, label: "2º turno" }]
+      : [0, 0.5, 1].map((ratio) => ({ at: min + (max - min) * ratio, label: date(new Date(min + (max - min) * ratio), true).slice(0, 5) })))
       .map(
-        (r) =>
-          `<text class="chart-axis" x="${42 + r * 620}" y="208" text-anchor="${r === 0 ? "start" : r === 1 ? "end" : "middle"}">${e(date(new Date(min + (max - min) * r), true).slice(0, 5))}</text>`,
+        (tick, index, ticks) =>
+          `<text class="chart-axis" x="${x(tick.at)}" y="208" text-anchor="${index === 0 ? "start" : index === ticks.length - 1 ? "end" : "middle"}">${e(tick.label)}</text>`,
       )
       .join("") +
     (hasValues
@@ -798,22 +902,26 @@ function renderHistory(history) {
             const value = point.left ?? point.right;
             return value === null
               ? ""
-              : `<circle class="chart-hit" cx="${x(point.at)}" cy="${y(value)}" r="12" tabindex="0" data-point="${index}" aria-label="${e(date(new Date(point.at)))}: ${e(selected.flavio.name)} ${e(pct(point.left))}; ${e(selected.lula.name)} ${e(pct(point.right))}"><title>${e(date(new Date(point.at)))} · ${e(selected.flavio.name)} ${e(pct(point.left))} · ${e(selected.lula.name)} ${e(pct(point.right))}</title></circle>`;
+              : `<circle class="chart-hit" cx="${x(point.at)}" cy="${y(value)}" r="12" tabindex="0" data-point="${index}" aria-label="${e(point.label || date(new Date(point.at)))}: ${e(selected.flavio.name)} ${e(pct(point.left))}; ${e(selected.lula.name)} ${e(pct(point.right))}"><title>${e(point.label || date(new Date(point.at)))} · ${e(selected.flavio.name)} ${e(pct(point.left))} · ${e(selected.lula.name)} ${e(pct(point.right))}</title></circle>`;
           })
           .join("")
-      : `<text class="chart-empty" x="352" y="94" text-anchor="middle">${state.year === 2022 ? "Histórico temporal não arquivado" : "Aguardando a primeira atualização válida"}</text><text class="chart-empty-note" x="352" y="115" text-anchor="middle">${state.year === 2022 ? "Resultados finais disponíveis; sem série de evolução." : "O gráfico começará quando a fonte publicar votos e percentuais."}</text>`);
+      : `<text class="chart-empty" x="352" y="94" text-anchor="middle">${state.year === 2022 && !archivedRoundSeries ? "Carregando resultados finais" : state.year === 2022 ? "Sem percentuais arquivados neste recorte" : "Aguardando a primeira atualização válida"}</text><text class="chart-empty-note" x="352" y="115" text-anchor="middle">${state.year === 2022 ? "Nenhum valor foi estimado ou preenchido." : "O gráfico começará quando a fonte publicar votos e percentuais."}</text>`);
   $("historyLegendFlavio").textContent = selected.flavio.name;
   $("historyLegendLula").textContent = selected.lula.name;
   $("historyLegendFlavio").parentElement.style.setProperty("--series-color", series[0].color);
   $("historyLegendLula").parentElement.style.setProperty("--series-color", series[1].color);
   $("historyLegendFlavio").parentElement.querySelector(".dot").style.backgroundColor = series[0].color;
   $("historyLegendLula").parentElement.querySelector(".dot").style.backgroundColor = series[1].color;
-  $("historySource").textContent = remoteFiltered.length
+  $("historySource").textContent = archivedRoundSeries
+    ? "Acervo histórico independente · TSE derivado"
+    : remoteFiltered.length
     ? providerName(history?.provider)
     : localPoints.length
     ? `${providerName(state.result?.provider)} · série observada neste navegador`
       : "Fonte sem série disponível";
-  $("historyNote").textContent = localSelected && points.length
+  $("historyNote").textContent = archivedRoundSeries && points.length
+    ? "Percentuais finais reais do 1º e do 2º turno, por localidade. O acervo não guarda a evolução horária da apuração; candidato ausente em um turno permanece como lacuna."
+    : localSelected && points.length
     ? `Série desde o primeiro resultado válido observado neste navegador (${date(new Date(points[0].at))}). Se uma seção fechou antes desta sessão, só um histórico preservado pela fonte pode preencher esse período. Lacunas permanecem vazias.`
     : chartHistoryError || (history?.diagnostics?.length
       ? history.diagnostics.map((diagnostic) => diagnostic.message).join(" · ")
@@ -835,7 +943,7 @@ function tooltip(event) {
   const p = chartPoints[Number(node.dataset.point)];
   const chartCandidates = candidates(state.result);
   $("chartTooltip").textContent =
-    `${date(new Date(p.at))} · ${chartCandidates.flavio.name} ${pct(p.left)} · ${chartCandidates.lula.name} ${pct(p.right)}`;
+    `${p.label || date(new Date(p.at))} · ${chartCandidates.flavio.name} ${pct(p.left)} · ${chartCandidates.lula.name} ${pct(p.right)}`;
   $("chartTooltip").hidden = false;
 }
 function syncControls() {

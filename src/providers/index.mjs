@@ -280,7 +280,7 @@ export async function getLocations(fetchImpl = fetch, country = null) {
       id: String(x.id),
       nome: x.nome,
       tipo: x.tipo || "unknown",
-      countryCode: x.countryCode || null,
+      countryCode: typeof x.countryCode === "string" ? x.countryCode.toUpperCase() : null,
     }));
     return {
       highlights: ["Austrália", "Nova Zelândia", "Japão"].filter((name) =>
