@@ -40,6 +40,7 @@ test("cores são identidades fixas do candidato, não da posição de comparaç�
   assert.equal(candidateColor("13"), "#ff405d");
   assert.equal(candidateColor("22"), "#3195ff");
   assert.equal(candidateColor("70"), "#e7ad3e");
+  assert.equal(candidateColor("21", 2022), "#b85067");
 });
 test("histórico mantém lacunas e quebra a linha", () => {
   const points = historyPoints([

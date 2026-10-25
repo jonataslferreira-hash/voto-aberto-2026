@@ -55,10 +55,13 @@ const CANDIDATE_COLORS = {
   13: "#ff405d", 22: "#3195ff", 55: "#48c78e", 27: "#b177ff",
   21: "#e77a35", 16: "#f05a7e", 70: "#e7ad3e", 30: "#f58b45",
   80: "#dc65d7", 35: "#28b8b0", 14: "#e6c24c", 29: "#bd6674",
+  12: "#65a7ff", 15: "#4fc59a", 44: "#48bfc4",
 };
-export function candidateColor(number) {
+const CANDIDATE_COLORS_2022 = { ...CANDIDATE_COLORS, 21: "#b85067", 30: "#9c78e3" };
+export function candidateColor(number, year = 2026) {
   const key = String(number);
-  return Object.hasOwn(CANDIDATE_COLORS, key) ? CANDIDATE_COLORS[key] : "#92a2b8";
+  const palette = Number(year) === 2022 ? CANDIDATE_COLORS_2022 : CANDIDATE_COLORS;
+  return Object.hasOwn(palette, key) ? palette[key] : "#92a2b8";
 }
 let selectedNumbers = ["22", "13"];
 export function setComparisonNumbers(numbers) {
@@ -95,7 +98,7 @@ export function candidates(payload) {
             : `Candidato ${number}`),
       number,
       party: c?.partido || "Partido não informado",
-      color: candidateColor(number),
+      color: candidateColor(number, payload?.year),
     };
   };
   const pair = payload?.comparisonNumbers || selectedNumbers;

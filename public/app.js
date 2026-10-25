@@ -23,16 +23,28 @@ const PORTRAITS = {
   red: new URL("./images/lula-cutout.png", import.meta.url).href,
 };
 const CANDIDATE_PORTRAITS = {
-  "55": new URL("./images/candidates/2026-55-ronaldo-caiado.jpg", import.meta.url).href,
-  "27": new URL("./images/candidates/2026-27-clariana-barao.jpg", import.meta.url).href,
-  "21": new URL("./images/candidates/2026-21-edmilson-costa.jpg", import.meta.url).href,
-  "16": new URL("./images/candidates/2026-16-hertz-dias.jpg", import.meta.url).href,
-  "70": new URL("./images/candidates/2026-70-augusto-cury.jpg", import.meta.url).href,
-  "30": new URL("./images/candidates/2026-30-zema.jpg", import.meta.url).href,
-  "80": new URL("./images/candidates/2026-80-samara-martins.jpg", import.meta.url).href,
-  "35": new URL("./images/candidates/2026-35-wilson-grassi.jpg", import.meta.url).href,
-  "14": new URL("./images/candidates/2026-14-renan-santos.jpg", import.meta.url).href,
-  "29": new URL("./images/candidates/2026-29-rui-costa-pimenta.jpg", import.meta.url).href,
+  "55": new URL("./images/candidates/2026-55-ronaldo-caiado.png", import.meta.url).href,
+  "27": new URL("./images/candidates/2026-27-clariana-barao.png", import.meta.url).href,
+  "21": new URL("./images/candidates/2026-21-edmilson-costa.png", import.meta.url).href,
+  "16": new URL("./images/candidates/2026-16-hertz-dias.png", import.meta.url).href,
+  "70": new URL("./images/candidates/2026-70-augusto-cury.png", import.meta.url).href,
+  "30": new URL("./images/candidates/2026-30-zema.png", import.meta.url).href,
+  "80": new URL("./images/candidates/2026-80-samara-martins.png", import.meta.url).href,
+  "35": new URL("./images/candidates/2026-35-wilson-grassi.png", import.meta.url).href,
+  "14": new URL("./images/candidates/2026-14-renan-santos.png", import.meta.url).href,
+  "29": new URL("./images/candidates/2026-29-rui-costa-pimenta.png", import.meta.url).href,
+};
+const CANDIDATE_PORTRAITS_2022 = {
+  "22": new URL("./images/candidates/2022-22-jair-bolsonaro.png", import.meta.url).href,
+  "12": new URL("./images/candidates/2022-12-ciro-gomes.png", import.meta.url).href,
+  "15": new URL("./images/candidates/2022-15-simone-tebet.png", import.meta.url).href,
+  "44": new URL("./images/candidates/2022-44-soraya-thronicke.png", import.meta.url).href,
+  "27": new URL("./images/candidates/2022-27-jose-maria-eymael.png", import.meta.url).href,
+  "14": new URL("./images/candidates/2022-14-padre-kelmon.png", import.meta.url).href,
+  "80": new URL("./images/candidates/2022-80-leo-pericles.png", import.meta.url).href,
+  "16": new URL("./images/candidates/2022-16-vera-lucia.png", import.meta.url).href,
+  "30": new URL("./images/candidates/2022-30-felipe-davila.png", import.meta.url).href,
+  "21": new URL("./images/candidates/2022-21-sofia-manzano.png", import.meta.url).href,
 };
 const DEFAULT_API_BASE_URL =
   (import.meta.env.VITE_API_BASE_URL || "").trim().replace(/\/+$/, "") || null;
@@ -285,15 +297,23 @@ function voteBar(payload, compact = false) {
   return `<div class="vote-track ${c.valid ? "" : "unavailable"}" role="img" aria-label="${c.valid ? `${e(c.flavio.name)} ${pct(c.flavio.pct)}; ${e(c.lula.name)} ${pct(c.lula.pct)}` : "Percentuais indisponíveis"}"><i class="blue" style="--candidate-color:${c.flavio.color};width:${c.valid ? c.flavio.pct : 0}%"></i><i class="red" style="--candidate-color:${c.lula.color};width:${c.valid ? c.lula.pct : 0}%"></i></div>${compact ? "" : `<div class="bar-legend"><span>${e(c.flavio.name)} · ${e(pct(c.flavio.pct))}</span><span>${e(pct(c.lula.pct))} · ${e(c.lula.name)}</span></div>`}`;
 }
 function portraitFor(number, name) {
-  if (state.year !== 2026) return null;
-  if (String(number) === "22" && /fl[aá]vio/i.test(name)) return PORTRAITS.blue;
-  if (String(number) === "13" && /lula/i.test(name)) return PORTRAITS.red;
-  return CANDIDATE_PORTRAITS[String(number)] || null;
+  const id = String(number);
+  if (state.year === 2026) {
+    if (id === "22" && /fl[aá]vio/i.test(name)) return PORTRAITS.blue;
+    if (id === "13" && /lula/i.test(name)) return PORTRAITS.red;
+    return CANDIDATE_PORTRAITS[id] || null;
+  }
+  if (state.year === 2022) {
+    if (id === "13" && /lula/i.test(name)) return PORTRAITS.red;
+    return CANDIDATE_PORTRAITS_2022[id] || null;
+  }
+  return null;
 }
 function renderCandidate(name, party, number, c, color) {
   const image = portraitFor(number, name);
-  const accent = candidateColor(number);
-  return `<article class="candidate candidate--${color}" data-watermark="${e(name)}" style="--candidate-accent:${accent}"><div class="candidate-info"><p class="candidate-kicker"><b>${e(number)}</b> ${e(party)} <span>•</span> PRESIDENTE</p><h2>${e(name)}</h2><p class="candidate__pct" aria-label="${e(pct(c.pct))}">${c.pct === null ? "—" : e(pct(c.pct).slice(0, -1))}${c.pct === null ? "" : "<small>%</small>"}</p><p class="candidate__votes">${e(int(c.votes))} <span>votos</span></p><div class="candidate-progress" aria-hidden="true"><i style="width:${c.pct ?? 0}%"></i></div></div><div class="portrait-frame ${image ? "" : "is-unavailable"}"><img class="portrait-photo" ${image ? `src="${image}"` : ""} alt="${image ? `Retrato fotográfico de ${e(name)}` : ""}" width="${String(number) === "22" ? 411 : 540}" height="${String(number) === "22" ? 546 : 780}" decoding="async"><span class="portrait-fallback">Retrato indisponível</span></div></article>`;
+  const accent = candidateColor(number, state.year),
+    transparentPng = Boolean(image);
+  return `<article class="candidate candidate--${color}" data-watermark="${e(name)}" style="--candidate-accent:${accent}"><div class="candidate-info"><p class="candidate-kicker"><b>${e(number)}</b> ${e(party)} <span>•</span> PRESIDENTE</p><h2>${e(name)}</h2><p class="candidate__pct" aria-label="${e(pct(c.pct))}">${c.pct === null ? "—" : e(pct(c.pct).slice(0, -1))}${c.pct === null ? "" : "<small>%</small>"}</p><p class="candidate__votes">${e(int(c.votes))} <span>votos</span></p><div class="candidate-progress" aria-hidden="true"><i style="width:${c.pct ?? 0}%"></i></div></div><div class="portrait-frame ${image ? "" : "is-unavailable"} ${image && !transparentPng ? "is-photographic" : ""}"><img class="portrait-photo" ${image ? `src="${image}"` : ""} alt="${image ? `Retrato fotográfico de ${e(name)}` : ""}" width="${String(number) === "22" ? 411 : 540}" height="${String(number) === "22" ? 546 : 780}" decoding="async"><span class="portrait-fallback">Retrato indisponível</span></div></article>`;
 }
 
 function renderResult(result) {
@@ -308,8 +328,8 @@ function renderResult(result) {
     valid = result.sourceKind !== "unavailable";
   $("app").dataset.gradient = c.valid ? "live" : "neutral";
   $("app").style.setProperty("--split", `${c.split ?? 50}%`);
-  $("app").style.setProperty("--left-color", candidateColor(state.pair[0]));
-  $("app").style.setProperty("--right-color", candidateColor(state.pair[1]));
+  $("app").style.setProperty("--left-color", candidateColor(state.pair[0], state.year));
+  $("app").style.setProperty("--right-color", candidateColor(state.pair[1], state.year));
   $("heroColorField").dataset.valid = String(c.valid);
   $("heroColorBlue").style.width = `${c.split ?? 0}%`;
   $("heroColorRed").style.width = `${c.split === null ? 0 : 100 - c.split}%`;
@@ -319,8 +339,8 @@ function renderResult(result) {
       ? `${c.flavio.name} ${c.split.toFixed(2)}%, ${c.lula.name} ${(100 - c.split).toFixed(2)}%; proporção entre os candidatos selecionados.`
       : "Áreas de cor neutras: percentuais ausentes.",
   );
-  $("heroColorBlue").style.background = `linear-gradient(100deg, color-mix(in srgb, ${candidateColor(state.pair[0])} 85%, transparent), color-mix(in srgb, ${candidateColor(state.pair[0])} 48%, transparent))`;
-  $("heroColorRed").style.background = `linear-gradient(100deg, color-mix(in srgb, ${candidateColor(state.pair[1])} 48%, transparent), color-mix(in srgb, ${candidateColor(state.pair[1])} 85%, transparent))`;
+  $("heroColorBlue").style.background = `linear-gradient(100deg, color-mix(in srgb, ${candidateColor(state.pair[0], state.year)} 85%, transparent), color-mix(in srgb, ${candidateColor(state.pair[0], state.year)} 48%, transparent))`;
+  $("heroColorRed").style.background = `linear-gradient(100deg, color-mix(in srgb, ${candidateColor(state.pair[1], state.year)} 48%, transparent), color-mix(in srgb, ${candidateColor(state.pair[1], state.year)} 85%, transparent))`;
   const winner = confirmedWinner(result);
   $("winnerConfirmation").hidden = !winner;
   $("winnerConfirmation").textContent = winner
@@ -341,9 +361,9 @@ function renderResult(result) {
   $("heroBar").innerHTML = voteBar(result);
   const legends = document.querySelectorAll(".map-legend>span");
   if (legends[0])
-    legends[0].innerHTML = `<i class="dot blue" style="background:${candidateColor(c.flavio.number)}"></i>${e(c.flavio.name)} na frente`;
+    legends[0].innerHTML = `<i class="dot blue" style="background:${candidateColor(c.flavio.number, state.year)}"></i>${e(c.flavio.name)} na frente`;
   if (legends[1])
-    legends[1].innerHTML = `<i class="dot red" style="background:${candidateColor(c.lula.number)}"></i>${e(c.lula.name)} na frente`;
+    legends[1].innerHTML = `<i class="dot red" style="background:${candidateColor(c.lula.number, state.year)}"></i>${e(c.lula.name)} na frente`;
 
   $("heroDifference").innerHTML =
     c.diff === null
@@ -484,8 +504,8 @@ function renderMap() {
         : c.leader === "tie"
           ? "#8f805f"
           : c.leader === "blue"
-            ? `color-mix(in srgb, ${candidateColor(c.flavio.number)} ${30 + intensity * 70}%, #1d2b41)`
-            : `color-mix(in srgb, ${candidateColor(c.lula.number)} ${30 + intensity * 70}%, #2a2436)`;
+            ? `color-mix(in srgb, ${candidateColor(c.flavio.number, state.year)} ${30 + intensity * 70}%, #1d2b41)`
+            : `color-mix(in srgb, ${candidateColor(c.lula.number, state.year)} ${30 + intensity * 70}%, #2a2436)`;
     const label = `${s.name} · ${c.leader === "unknown" ? "Sem dados" : c.leader === "tie" ? "Empate em votos" : `${e(c.leader === "blue" ? c.flavio.name : c.lula.name)} na frente · ${providerName(p.provider)}`}`;
     node.setAttribute("aria-label", `Selecionar ${label}`);
     node.querySelector("title").textContent = label;
@@ -504,6 +524,7 @@ function renderRegions() {
             ? region.groups
                 .map((g) => {
                   const payload = {
+                    year: state.year,
                     candidatos: [
                       {
                         candidato: candidates(state.result).flavio.name,
@@ -920,8 +941,8 @@ function syncCandidateOptions(result) {
       ranked
         .map(
           (c, index) => {
-            const portrait = state.year === 2026 ? portraitFor(c.numero, c.candidato) : null;
-            return `<div class="candidate-rank-row"><b class="candidate-rank">${index + 1}º</b>${portrait ? `<img src="${portrait}" alt="Retrato de ${e(c.candidato)}" loading="lazy" width="32" height="42">` : `<span class="candidate-rank-placeholder" aria-label="Retrato indisponível">—</span>`}<strong>${e(c.candidato)}</strong><span>${e(c.partido || "")} ${e(c.numero || "")}</span><b style="color:${candidateColor(c.numero)}">${e(pct(c.percentual))}</b><span>${e(int(c.votos))} votos</span></div>`;
+            const portrait = portraitFor(c.numero, c.candidato);
+            return `<div class="candidate-rank-row"><b class="candidate-rank">${index + 1}º</b>${portrait ? `<img src="${portrait}" alt="Retrato de ${e(c.candidato)}" loading="lazy" width="32" height="42">` : `<span class="candidate-rank-placeholder" aria-label="Retrato indisponível">—</span>`}<strong>${e(c.candidato)}</strong><span>${e(c.partido || "")} ${e(c.numero || "")}</span><b style="color:${candidateColor(c.numero, state.year)}">${e(pct(c.percentual))}</b><span>${e(int(c.votos))} votos</span></div>`;
           },
         )
         .join("") +
