@@ -1,8 +1,26 @@
 # voto-aberto-2026
 
-Painel eleitoral em tempo real para acompanhamento da apuração presidencial de 2026, com frontend estático para GitHub Pages e backend/proxy externo para integração de dados reais.
+Painel eleitoral premium (tema escuro) para acompanhar a apuração presidencial de 2026 com frontend estático no GitHub Pages e backend/proxy externo para dados reais.
 
-## Arquitetura de fontes e precedência
+## O que foi implementado
+
+- Interface reconstruída para formato de dashboard de apuração:
+  - topo com marca, navegação **Brasil / Estados / Exterior**, seletor **Simples / Completo** e controles de fonte;
+  - hero central com candidatos, votos, percentuais, barra proporcional e badges condicionais;
+  - cards de urnas/atualização, diferença de votos, resultados por região, mapa de estados, exterior por abas, últimas atualizações e histórico de linhas (1h/3h/total);
+  - tema escuro premium com microinterações e transições suaves.
+- Mobile-first e responsivo, sem overflow horizontal.
+- Atualização automática sem reload (polling 3s), com proteção contra concorrência (`AbortController` + fila de refresh pendente).
+- Gradiente global proporcional aos percentuais da localidade selecionada; fallback neutro quando não há percentuais válidos.
+- Estado de indisponibilidade desenhado no próprio painel quando API externa não está configurada/indisponível (sem inventar votos).
+- Renderização sanitizada para texto dinâmico vindo das fontes.
+
+## Retratos e mapa
+
+- **Retratos**: o repositório não contém imagens dos candidatos com origem/licença verificável. Por isso o painel mostra estado visual elegante de indisponibilidade, sem avatar genérico e sem foto sem origem documentada.
+- **Mapa**: implementado como cartograma SVG clicável por UF (26 + DF), com legenda de liderança por estado baseada em dados reais quando disponíveis via backend. Estados sem retorno válido ficam como "Sem dados".
+
+## Fontes e precedência
 
 1. **TSE oficial** (`official-tse`) – autoridade final.
 2. **Feed independente baseado no TSE** (`independent-tse-derived`) – `https://eleicoes2026brasil.com/feed/`.
@@ -10,22 +28,19 @@ Painel eleitoral em tempo real para acompanhamento da apuração presidencial de
 
 > O backend nunca mistura silenciosamente fontes diferentes na mesma totalização exibida.
 
-## Limitação importante do GitHub Pages
+## Limitação do GitHub Pages
 
-O GitHub Pages **não executa Node.js**.  
-Portanto:
+GitHub Pages publica apenas o frontend estático (`dist/`). O backend/proxy Node (`src/server.mjs`) deve rodar separado (Render, Fly, Railway, Vercel Functions etc.).
 
-- o conteúdo publicado em Pages é apenas o frontend estático (`dist/`);
-- o proxy/backend continua separado (Render/Fly/Railway/Vercel Functions etc.);
-- sem backend configurado, a interface mostra indisponibilidade com explicação da fonte/status e **não inventa números**.
+Sem backend configurado, o painel exibe indisponibilidade explícita e preserva transparência sobre a origem.
 
 ## Configuração da API externa
 
-Defina a variável de ambiente abaixo no build estático:
+Defina no build estático:
 
 - `VITE_API_BASE_URL` → URL pública do backend/proxy (ex.: `https://seu-backend.exemplo.com`)
 
-O frontend chama:
+Endpoints esperados:
 
 - `${VITE_API_BASE_URL}/api/results`
 - `${VITE_API_BASE_URL}/api/history`
@@ -33,38 +48,28 @@ O frontend chama:
 
 ## Execução local
 
-Instalação:
-
 ```bash
 npm install
-```
-
-Executar backend/proxy local:
-
-```bash
 npm start
-# http://localhost:3000
-```
+# backend em http://localhost:3000
 
-Executar frontend Pages local (Vite):
-
-```bash
 VITE_API_BASE_URL=http://localhost:3000 npm run dev:pages
 ```
 
-## Build estático para GitHub Pages
+## Build para GitHub Pages
 
 ```bash
 VITE_API_BASE_URL=https://seu-backend.exemplo.com npm run build
+npm run verify:pages
 ```
 
-O build gera:
+Artefatos obrigatórios:
 
 - `dist/index.html`
-- `dist/404.html` (fallback de navegação para carregamento direto de rota em Pages)
+- `dist/404.html`
 - `dist/.nojekyll`
 
-## Testes e verificações
+## Testes
 
 ```bash
 npm test
@@ -72,52 +77,15 @@ VITE_API_BASE_URL=https://seu-backend.exemplo.com npm run build
 npm run verify:pages
 ```
 
-As verificações cobrem:
+## Workflow de publicação
 
-- build de produção;
-- paths de assets com `/voto-aberto-2026/`;
-- fallback/artefatos obrigatórios de Pages (`404.html` e `.nojekyll`);
-- contrato de indisponibilidade quando `VITE_API_BASE_URL` não está configurada.
+Arquivo: `.github/workflows/deploy-pages.yml`
 
-## Publicação automática no GitHub Pages
-
-Workflow: `.github/workflows/deploy-pages.yml`
-
-- dispara em `push` na branch `main`;
-- usa permissões mínimas:
-  - `contents: read`
-  - `pages: write`
-  - `id-token: write`
-- executa `npm ci`, testes, build e verificação do artefato;
-- usa:
-  - `actions/configure-pages@v5`
-  - `actions/upload-pages-artifact@v3`
-  - `actions/deploy-pages@v4`
-
-URL esperada após publicação:  
-`https://jonataslferreira-hash.github.io/voto-aberto-2026/`
-
-## Ativação do GitHub Pages
-
-Se necessário, habilite em:
+Se o workflow falhar com erro de `actions/configure-pages` (`Not Found`), ative o Pages em:
 
 1. `Settings` → `Pages`
 2. `Build and deployment` → `Source: GitHub Actions`
 
-## Backend/proxy (fora do GitHub Pages)
+URL final esperada:
 
-Arquivo: `src/server.mjs`
-
-Endpoints:
-
-- `GET /api/results?scope=&provider=`
-- `GET /api/history?scope=&provider=&window=1h|3h|all`
-- `GET /api/locations`
-
-Recursos:
-
-- timeout via `AbortController`;
-- cache em memória por instância;
-- suporte a `ETag`/`Last-Modified`;
-- backoff para `429/503` com `Retry-After`;
-- mensagens de erro específicas por provedor.
+`https://jonataslferreira-hash.github.io/voto-aberto-2026/`
